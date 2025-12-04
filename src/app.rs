@@ -13,7 +13,7 @@ use crate::{
     rendering::{Font, Rect, RectRenderer, Text, TextRenderer},
     resources::AppResources,
     utils::*,
-    wgpu_utils::{Canvas as _, CanvasView, ProjectionSpace, Rgb, WindowCanvas},
+    wgpu_utils::{Canvas as _, CanvasView, ProjectionSpace, Srgb, WindowCanvas},
 };
 
 pub(crate) struct Application<'cx> {
@@ -57,11 +57,8 @@ impl<'cx> ApplicationHandler for Application<'cx> {
 }
 
 fn init_wgpu() -> (wgpu::Instance, wgpu::Adapter, wgpu::Device, wgpu::Queue) {
-    let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor::default());
-    let adapter = instance
-        .request_adapter(&wgpu::RequestAdapterOptions::default())
-        .block_on()
-        .unwrap();
+    let instance = wgpu::Instance::new(&the_default());
+    let adapter = instance.request_adapter(&the_default()).block_on().unwrap();
     let features = wgpu::FeaturesWGPU::POLYGON_MODE_LINE;
     let (device, queue) = adapter
         .request_device(&wgpu::DeviceDescriptor {
@@ -97,7 +94,7 @@ impl<'cx> UiState<'cx> {
             |color_format| wgpu::SurfaceConfiguration {
                 usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
                 format: color_format,
-                view_formats: vec![color_format.add_srgb_suffix()],
+                view_formats: vec![color_format],
                 alpha_mode: wgpu::CompositeAlphaMode::Auto,
                 width: window.inner_size().width,
                 height: window.inner_size().height,
@@ -152,7 +149,7 @@ impl<'cx> UiState<'cx> {
 
         // Draw background rect.
         self.background_rect
-            .set_fill_color(&self.queue, Rgb::from_hex(0x505050));
+            .set_fill_color(&self.queue, Srgb::from_hex(0x303030));
         self.background_rect.set_model_view(
             &self.queue,
             Matrix4::from_translation(vec3(-1.0, -1.0, 0.0)) * Matrix4::from_scale(2.0),
@@ -160,22 +157,25 @@ impl<'cx> UiState<'cx> {
         self.rect_renderer
             .draw_rect(&mut render_pass, &self.background_rect);
 
-        // Draw text.
-        let model_view_text = Matrix4::from_scale(31.);
-        self.text.set_fg_color(&self.queue, Rgb::from_hex(0xFFFFFF));
-        self.text.set_bg_color(&self.queue, Rgb::from_hex(0x008080));
-        self.text.set_projection(&self.queue, projection);
-        self.text.set_model_view(&self.queue, model_view_text);
-        self.text_renderer.draw_text(&mut render_pass, &self.text);
-
         // Draw rect.
-        let model_view_rect = Matrix4::from_translation(vec3(20., 40., 0.))
-            * Matrix4::from_nonuniform_scale(200., 100., 1.);
+        let model_view_rect = Matrix4::from_translation(vec3(20., 20., 0.))
+            * Matrix4::from_nonuniform_scale(400., 200., 1.);
         self.rect
-            .set_fill_color(&self.queue, Rgb::from_hex(0xFFFF00));
+            .set_fill_color(&self.queue, Srgb::from_hex(0xFBC000));
         self.rect.set_projection(&self.queue, projection);
         self.rect.set_model_view(&self.queue, model_view_rect);
         self.rect_renderer.draw_rect(&mut render_pass, &self.rect);
+
+        // Draw text.
+        let model_view_text =
+            Matrix4::from_translation(vec3(20., 20., 0.)) * Matrix4::from_scale(29.);
+        self.text
+            .set_fg_color(&self.queue, Srgb::from_hex(0xFFFFFF));
+        self.text
+            .set_bg_color(&self.queue, Srgb::from_hex(0x008080));
+        self.text.set_projection(&self.queue, projection);
+        self.text.set_model_view(&self.queue, model_view_text);
+        self.text_renderer.draw_text(&mut render_pass, &self.text);
 
         drop(render_pass);
 

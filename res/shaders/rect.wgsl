@@ -23,5 +23,6 @@ fn vs_main(input: VertexInput) -> VertexOutput {
 
 @fragment
 fn fs_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
+    // return vec4<f32>(0.214, 0.214, 0.214, 1.0);
     return fill_color;
 }

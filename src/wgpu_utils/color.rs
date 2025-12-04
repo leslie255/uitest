@@ -1,8 +1,16 @@
-pub fn linear_to_srgb(x: f32) -> f32 {
-    if x <= 0.0031308 {
-        12.92 * x
+pub fn linear_to_srgb(linear: f32) -> f32 {
+    if linear <= 0.0031308 {
+        linear * 12.92
     } else {
-        1.055 * x.powf(2.4) - 0.055
+        linear.powf(1. / 2.4) * 1.055 - 0.055
+    }
+}
+
+pub fn srgb_to_linear(srgb: f32) -> f32 {
+    if srgb <= 0.04045 {
+        srgb / 12.92
+    } else {
+        ((srgb + 0.055) / 1.055).powf(2.4)
     }
 }
 
@@ -44,6 +52,28 @@ impl From<Rgba> for [f32; 4] {
 impl From<[f32; 4]> for Rgba {
     fn from([r, g, b, a]: [f32; 4]) -> Self {
         Self { r, g, b, a }
+    }
+}
+
+impl From<Srgba> for Rgba {
+    fn from(s: Srgba) -> Self {
+        Self::new(
+            srgb_to_linear(s.r),
+            srgb_to_linear(s.g),
+            srgb_to_linear(s.b),
+            s.a,
+        )
+    }
+}
+
+impl From<Srgb> for Rgba {
+    fn from(s: Srgb) -> Self {
+        Self::new(
+            srgb_to_linear(s.r),
+            srgb_to_linear(s.g),
+            srgb_to_linear(s.b),
+            1.0,
+        )
     }
 }
 
@@ -99,15 +129,15 @@ impl From<Rgba> for Srgba {
     }
 }
 
-/// Linear RGB.
+/// sRGB.
 #[derive(Debug, Clone, Copy, PartialEq)]
-pub struct Rgb {
+pub struct Srgb {
     pub r: f32,
     pub g: f32,
     pub b: f32,
 }
 
-impl Rgb {
+impl Srgb {
     pub const fn new(r: f32, g: f32, b: f32) -> Self {
         Self { r, g, b }
     }
@@ -126,31 +156,20 @@ impl Rgb {
     }
 }
 
-impl From<Rgb> for [f32; 3] {
-    fn from(srgba: Rgb) -> Self {
+impl From<Srgb> for [f32; 3] {
+    fn from(srgba: Srgb) -> Self {
         srgba.to_array()
     }
 }
 
-impl From<[f32; 3]> for Rgb {
+impl From<[f32; 3]> for Srgb {
     fn from([r, g, b]: [f32; 3]) -> Self {
         Self { r, g, b }
     }
 }
 
-impl From<Rgb> for Rgba {
-    fn from(color: Rgb) -> Self {
-        Self::new(color.r, color.g, color.b, 1.0)
-    }
-}
-
-impl From<Rgb> for Srgba {
-    fn from(linear: Rgb) -> Self {
-        Self::new(
-            linear_to_srgb(linear.r),
-            linear_to_srgb(linear.g),
-            linear_to_srgb(linear.b),
-            1.0,
-        )
+impl From<Srgb> for Srgba {
+    fn from(s: Srgb) -> Self {
+        Self::new(s.r, s.g, s.b, 1.0)
     }
 }

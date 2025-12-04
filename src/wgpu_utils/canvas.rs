@@ -161,18 +161,16 @@ impl<'window> WindowCanvas<'window> {
         let window_scale_factor = window.scale_factor();
         let window_surface = instance.create_surface(window).unwrap();
         let surface_capabilities = window_surface.get_capabilities(adapter);
-        log::info!("supported output formats: {:?}", surface_capabilities.formats);
-        let mut hdr_format: Option<wgpu::TextureFormat> = None;
-        let mut sdr_format: Option<wgpu::TextureFormat> = None;
-        for &format in &surface_capabilities.formats {
-            match format {
-                format @ wgpu::TextureFormat::Rgba16Float => hdr_format = Some(format),
-                format if format.is_srgb() => sdr_format = Some(format),
-                _ => (),
-            }
-        }
-        let color_format =
-            hdr_format.unwrap_or(sdr_format.unwrap_or(surface_capabilities.formats[0]));
+        log::info!(
+            "supported output formats: {:?}",
+            surface_capabilities.formats
+        );
+        let color_format = surface_capabilities
+            .formats
+            .iter()
+            .copied()
+            .find(|&format| format.is_srgb())
+            .unwrap_or(surface_capabilities.formats[0]);
         log::info!("output color format: {color_format:?}");
         let mut self_ = Self::new(
             window_surface,
@@ -236,7 +234,7 @@ impl<'a> Canvas for WindowCanvas<'a> {
             surface_texture
                 .texture
                 .create_view(&wgpu::TextureViewDescriptor {
-                    format: Some(self.format.color_format.add_srgb_suffix()),
+                    format: Some(self.format.color_format),
                     ..the_default()
                 });
         *surface_texture_ = Some(surface_texture);

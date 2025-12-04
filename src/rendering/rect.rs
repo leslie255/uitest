@@ -4,7 +4,8 @@ use crate::{
     resources::{AppResources, LoadResourceError},
     utils::*,
     wgpu_utils::{
-        vertex_formats::Vertex2dUV, AsBindGroup, CanvasFormat, IndexBuffer, Srgba, UniformBuffer, Vertex as _, VertexBuffer
+        AsBindGroup, CanvasFormat, IndexBuffer, Rgba, UniformBuffer, Vertex as _, VertexBuffer,
+        vertex_formats::Vertex2dUV,
     },
 };
 
@@ -59,15 +60,16 @@ impl<'cx> RectRenderer<'cx> {
                 entry_point: Some("fs_main"),
                 compilation_options: the_default(),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: canvas_format.color_format,
-                    blend: Some(wgpu::BlendState {
-                        color: wgpu::BlendComponent {
-                            operation: wgpu::BlendOperation::Add,
-                            src_factor: wgpu::BlendFactor::SrcAlpha,
-                            dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
-                        },
-                        alpha: wgpu::BlendComponent::REPLACE,
-                    }),
+                    format: dbg!(canvas_format.color_format),
+                    blend: None,
+                    // blend: Some(wgpu::BlendState {
+                    //     color: wgpu::BlendComponent {
+                    //         operation: wgpu::BlendOperation::Add,
+                    //         src_factor: wgpu::BlendFactor::SrcAlpha,
+                    //         dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                    //     },
+                    //     alpha: wgpu::BlendComponent::REPLACE,
+                    // }),
                     write_mask: wgpu::ColorWrites::ALL,
                 })],
             }),
@@ -148,7 +150,9 @@ impl Rect {
         self.bind_group.projection.write(projection.into(), queue);
     }
 
-    pub fn set_fill_color(&self, queue: &wgpu::Queue, fill_color: impl Into<Srgba>) {
-        self.bind_group.fill_color.write(fill_color.into().to_array(), queue);
+    pub fn set_fill_color(&self, queue: &wgpu::Queue, fill_color: impl Into<Rgba>) {
+        self.bind_group
+            .fill_color
+            .write(fill_color.into().to_array(), queue);
     }
 }
