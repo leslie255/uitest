@@ -1,0 +1,13 @@
+[package]
+name = "derive"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "derive"
+proc-macro = true
+
+[dependencies]
+syn = { version = "*", features = ["full"] }
+quote = "*"
+proc-macro2 = "*"
