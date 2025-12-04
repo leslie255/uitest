@@ -14,7 +14,7 @@ use crate::{
     resources::LoadResourceError,
     utils::*,
     wgpu_utils::{
-        AsBindGroup, IndexBuffer, UniformBuffer, Vertex as _, VertexBuffer,
+        AsBindGroup, CanvasFormat, IndexBuffer, UniformBuffer, Vertex as _, VertexBuffer,
         vertex_formats::Vertex2dUV,
     },
 };
@@ -221,8 +221,7 @@ impl<'cx> TextRenderer<'cx> {
         queue: &wgpu::Queue,
         font: Font<'cx>,
         resources: &'cx AppResources,
-        surface_color_format: wgpu::TextureFormat,
-        depth_stencil_format: Option<wgpu::TextureFormat>,
+        canvas_format: CanvasFormat,
     ) -> Result<Self, LoadResourceError> {
         let shader = resources.load_shader("shaders/text.wgsl", device)?;
         let bind_group_layout = TextBindGroup::create_bind_group_layout(device);
@@ -245,7 +244,7 @@ impl<'cx> TextRenderer<'cx> {
                 entry_point: Some("fs_main"),
                 compilation_options: the_default(),
                 targets: &[Some(wgpu::ColorTargetState {
-                    format: surface_color_format,
+                    format: canvas_format.color_format,
                     blend: Some(wgpu::BlendState {
                         color: wgpu::BlendComponent {
                             operation: wgpu::BlendOperation::Add,
@@ -258,12 +257,14 @@ impl<'cx> TextRenderer<'cx> {
                 })],
             }),
             primitive: the_default(),
-            depth_stencil: depth_stencil_format.map(|format| wgpu::DepthStencilState {
-                format,
-                depth_write_enabled: true,
-                depth_compare: wgpu::CompareFunction::Always,
-                stencil: the_default(),
-                bias: the_default(),
+            depth_stencil: canvas_format.depth_stencil_format.map(|format| {
+                wgpu::DepthStencilState {
+                    format,
+                    depth_write_enabled: true,
+                    depth_compare: wgpu::CompareFunction::Always,
+                    stencil: the_default(),
+                    bias: the_default(),
+                }
             }),
             multisample: the_default(),
             multiview: None,

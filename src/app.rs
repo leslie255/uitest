@@ -82,33 +82,37 @@ struct UiState<'cx> {
     text_renderer: TextRenderer<'cx>,
     text: Text,
     rect_renderer: RectRenderer<'cx>,
+    background_rect: Rect,
     rect: Rect,
 }
 
 impl<'cx> UiState<'cx> {
     pub fn create(resources: &'cx AppResources, window: Arc<Window>) -> Self {
         let (instance, adapter, device, queue) = init_wgpu();
-        let window_canvas =
-            WindowCanvas::create_for_window(&instance, &adapter, &device, window.retain());
+        let window_canvas = WindowCanvas::create_for_window(
+            &instance,
+            &adapter,
+            &device,
+            window.retain(),
+            |color_format| wgpu::SurfaceConfiguration {
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                format: color_format,
+                view_formats: vec![color_format.add_srgb_suffix()],
+                alpha_mode: wgpu::CompositeAlphaMode::Auto,
+                width: window.inner_size().width,
+                height: window.inner_size().height,
+                desired_maximum_frame_latency: 3,
+                present_mode: wgpu::PresentMode::AutoVsync,
+            },
+        );
         let font = Font::load_from_path(resources, "fonts/big_blue_terminal.json").unwrap();
-        let text_renderer = TextRenderer::create(
-            &device,
-            &queue,
-            font,
-            resources,
-            window_canvas.format().color_format,
-            None,
-        )
-        .unwrap();
+        let text_renderer =
+            TextRenderer::create(&device, &queue, font, resources, window_canvas.format()).unwrap();
         let text = text_renderer.create_text(&device, "HELLO, WORLD");
-        let rect_renderer = RectRenderer::create(
-            &device,
-            resources,
-            window_canvas.format().color_format,
-            None,
-        )
-        .unwrap();
+        let rect_renderer =
+            RectRenderer::create(&device, resources, window_canvas.format()).unwrap();
         let rect = rect_renderer.create_rect(&device);
+        let background_rect = rect_renderer.create_rect(&device);
         let mut self_ = Self {
             resources,
             device,
@@ -119,6 +123,7 @@ impl<'cx> UiState<'cx> {
             text,
             rect_renderer,
             rect,
+            background_rect,
         };
         self_.window_resized();
         self_
@@ -144,6 +149,16 @@ impl<'cx> UiState<'cx> {
         });
 
         let projection = canvas.projection(ProjectionSpace::TopLeftDown, -1.0, 1.0);
+
+        // Draw background rect.
+        self.background_rect
+            .set_fill_color(&self.queue, vec4(0.2, 0.2, 0.2, 1.0));
+        self.background_rect.set_model_view(
+            &self.queue,
+            Matrix4::from_translation(vec3(-1.0, -1.0, 0.0)) * Matrix4::from_scale(2.0),
+        );
+        self.rect_renderer
+            .draw_rect(&mut render_pass, &self.background_rect);
 
         // Draw text.
         let model_view_text = Matrix4::from_scale(17.);

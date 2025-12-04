@@ -62,7 +62,7 @@ pub struct TextureCanvas {
     color_texture: wgpu::Texture,
     depth_stencil_texture: Option<wgpu::Texture>,
     format: CanvasFormat,
-    size: Vector2<f32>,
+    logical_size: Vector2<f32>,
 }
 
 impl TextureCanvas {
@@ -70,13 +70,13 @@ impl TextureCanvas {
         color_texture: wgpu::Texture,
         depth_stencil_texture: Option<wgpu::Texture>,
         format: CanvasFormat,
-        size: Vector2<f32>,
+        logical_size: Vector2<f32>,
     ) -> Self {
         Self {
             color_texture,
             depth_stencil_texture,
             format,
-            size,
+            logical_size,
         }
     }
 }
@@ -87,7 +87,7 @@ impl Canvas for TextureCanvas {
     }
 
     fn logical_size(&self) -> Vector2<f32> {
-        self.size
+        self.logical_size
     }
 
     fn begin_drawing(&self) -> Result<CanvasView, Box<dyn Error>> {
@@ -97,7 +97,7 @@ impl Canvas for TextureCanvas {
                 .depth_stencil_texture
                 .as_ref()
                 .map(|texture| texture.create_view(&the_default())),
-            logical_size: self.size,
+            logical_size: self.logical_size,
         })
     }
 
@@ -113,6 +113,7 @@ pub struct WindowCanvas<'window> {
     format: CanvasFormat,
     logical_size: Vector2<f32>,
     surface_texture: Mutex<Option<wgpu::SurfaceTexture>>,
+    surface_config: wgpu::wgt::SurfaceConfiguration<Vec<wgpu::TextureFormat>>,
 }
 
 #[derive(Debug, Display, Error)]
@@ -137,6 +138,7 @@ impl<'window> WindowCanvas<'window> {
         depth_stencil_texture: Option<wgpu::Texture>,
         format: CanvasFormat,
         logical_size: Vector2<f32>,
+        surface_config: wgpu::SurfaceConfiguration,
     ) -> Self {
         Self {
             window_surface,
@@ -144,6 +146,7 @@ impl<'window> WindowCanvas<'window> {
             format,
             logical_size,
             surface_texture: the_default(),
+            surface_config,
         }
     }
 
@@ -152,17 +155,25 @@ impl<'window> WindowCanvas<'window> {
         adapter: &wgpu::Adapter,
         device: &wgpu::Device,
         window: Arc<Window>,
+        surface_config: impl FnOnce(wgpu::TextureFormat) -> wgpu::SurfaceConfiguration,
     ) -> Self {
         let window_size = window.inner_size();
         let window_scale_factor = window.scale_factor();
         let window_surface = instance.create_surface(window).unwrap();
         let surface_capabilities = window_surface.get_capabilities(adapter);
-        let color_format = surface_capabilities
-            .formats
-            .iter()
-            .find(|f| f.is_srgb())
-            .copied()
-            .unwrap_or(surface_capabilities.formats[0]);
+        log::info!("supported output formats: {:?}", surface_capabilities.formats);
+        let mut hdr_format: Option<wgpu::TextureFormat> = None;
+        let mut sdr_format: Option<wgpu::TextureFormat> = None;
+        for &format in &surface_capabilities.formats {
+            match format {
+                format @ wgpu::TextureFormat::Rgba16Float => hdr_format = Some(format),
+                format if format.is_srgb() => sdr_format = Some(format),
+                _ => (),
+            }
+        }
+        let color_format =
+            hdr_format.unwrap_or(sdr_format.unwrap_or(surface_capabilities.formats[0]));
+        log::info!("output color format: {color_format:?}");
         let mut self_ = Self::new(
             window_surface,
             None,
@@ -172,6 +183,7 @@ impl<'window> WindowCanvas<'window> {
             },
             // reconfigure_for_size would initialise this field.
             vec2(0., 0.),
+            surface_config(color_format),
         );
         self_.reconfigure_for_size(device, window_size, window_scale_factor, None);
         self_
@@ -186,17 +198,9 @@ impl<'window> WindowCanvas<'window> {
     ) {
         let logical_size = size.to_logical::<f32>(scale_factor);
         self.logical_size = vec2(logical_size.width, logical_size.height);
-        let surface_config = wgpu::SurfaceConfiguration {
-            usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-            format: self.format.color_format,
-            view_formats: vec![self.format.color_format.add_srgb_suffix()],
-            alpha_mode: wgpu::CompositeAlphaMode::Auto,
-            width: size.width,
-            height: size.height,
-            desired_maximum_frame_latency: 3,
-            present_mode: wgpu::PresentMode::AutoVsync,
-        };
-        self.window_surface.configure(device, &surface_config);
+        self.surface_config.width = size.width;
+        self.surface_config.height = size.height;
+        self.window_surface.configure(device, &self.surface_config);
         match (
             self.depth_stencil_texture.as_mut(),
             new_depth_stencil_texture,
@@ -228,7 +232,13 @@ impl<'a> Canvas for WindowCanvas<'a> {
             return Err(Box::new(WindowBeginDrawingError::IsCurrentlyDrawing));
         }
         let surface_texture = self.window_surface.get_current_texture()?;
-        let color_texture_view = surface_texture.texture.create_view(&the_default());
+        let color_texture_view =
+            surface_texture
+                .texture
+                .create_view(&wgpu::TextureViewDescriptor {
+                    format: Some(self.format.color_format.add_srgb_suffix()),
+                    ..the_default()
+                });
         *surface_texture_ = Some(surface_texture);
         let depth_stencil_texture_view = self
             .depth_stencil_texture
