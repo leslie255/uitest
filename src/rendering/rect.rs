@@ -8,29 +8,39 @@ use crate::{
     wgpu_utils::{AsBindGroup, CanvasFormat, Rgba, UniformBuffer},
 };
 
-#[derive(Default, Debug, Clone, Copy, PartialEq, Zeroable, Pod)]
+#[derive(Debug, Clone, Copy)]
 #[repr(C)]
 pub struct BoundingBox {
-    pub x_min: f32,
-    pub y_min: f32,
-    pub width: f32,
-    pub height: f32,
+    pub origin: Point2<f32>,
+    pub size: RectSize,
 }
 
 impl BoundingBox {
-    pub fn x_max(self) -> f32 {
-        self.x_min + self.width
-    }
-
-    pub fn y_max(self) -> f32 {
-        self.y_min + self.height
-    }
-
-    pub fn as_rect_size(self) -> RectSize {
-        RectSize {
-            width: self.width,
-            height: self.height,
+    pub const fn new(x_min: f32, y_min: f32, width: f32, height: f32) -> Self {
+        Self {
+            origin: point2(x_min, y_min),
+            size: RectSize::new(width, height),
         }
+    }
+
+    pub const fn x_min(self) -> f32 {
+        self.origin.x
+    }
+
+    pub const fn y_min(self) -> f32 {
+        self.origin.y
+    }
+
+    pub const fn x_max(self) -> f32 {
+        self.origin.x + self.size.width
+    }
+
+    pub const fn y_max(self) -> f32 {
+        self.origin.y + self.size.height
+    }
+
+    pub const fn end(self) -> Point2<f32> {
+        point2(self.x_max(), self.y_max())
     }
 }
 
@@ -39,6 +49,16 @@ impl BoundingBox {
 pub struct RectSize {
     pub width: f32,
     pub height: f32,
+}
+
+impl RectSize {
+    pub const fn new(width: f32, height: f32) -> Self {
+        Self { width, height }
+    }
+
+    pub fn as_vec(self) -> Vector2<f32> {
+        vec2(self.width, self.height)
+    }
 }
 
 #[derive(Debug, Clone, AsBindGroup)]
@@ -71,8 +91,8 @@ pub enum LineWidth {
     /// Borders have different line widths.
     PerBorder {
         left: f32,
-        right: f32,
         top: f32,
+        right: f32,
         bottom: f32,
     },
 }
@@ -83,37 +103,30 @@ impl LineWidth {
             Self::Uniform(width) => [width, width, width, width],
             Self::PerBorder {
                 left,
-                right,
                 top,
+                right,
                 bottom,
-            } => [left, right, top, bottom],
+            } => [left, top, right, bottom],
         }
     }
 
-    pub fn map(self, mut transform: impl FnMut(f32) -> f32) -> Self {
-        match self {
-            Self::Uniform(f) => Self::Uniform(transform(f)),
-            Self::PerBorder {
-                left,
-                right,
-                top,
-                bottom,
-            } => Self::PerBorder {
-                left: transform(left),
-                right: transform(right),
-                top: transform(top),
-                bottom: transform(bottom),
-            },
+    pub const fn normalized_in(self, size: RectSize) -> Self {
+        let [left, top, right, bottom] = self.to_array();
+        Self::PerBorder {
+            left: left / size.width,
+            top: top / size.height,
+            right: right / size.width,
+            bottom: bottom / size.height,
         }
     }
 }
 
 impl From<[f32; 4]> for LineWidth {
-    fn from([left, right, top, bottom]: [f32; 4]) -> Self {
+    fn from([left, top, right, bottom]: [f32; 4]) -> Self {
         Self::PerBorder {
             left,
-            right,
             top,
+            right,
             bottom,
         }
     }
@@ -221,6 +234,35 @@ impl Rect {
 
     pub fn set_projection(&self, queue: &wgpu::Queue, projection: Matrix4<f32>) {
         self.bind_group.projection.write(projection.into(), queue);
+    }
+
+    /// Convenience function over `set_model_view` and `set_line_width`.
+    /// Sets `model_view` and `line_width` according to the bounding box and pre-normalized line
+    /// width, and then allows applying a transformation matrix on top.
+    pub fn set_parameters_with_transform(
+        &self,
+        queue: &wgpu::Queue,
+        bounding_box: BoundingBox,
+        line_width: impl Into<LineWidth>,
+        model: Matrix4<f32>,
+    ) {
+        let model_view = model
+            * Matrix4::from_translation(bounding_box.origin.to_vec().extend(0.))
+            * Matrix4::from_nonuniform_scale(bounding_box.size.width, bounding_box.size.height, 1.);
+        self.set_model_view(queue, model_view);
+        self.set_line_width(queue, line_width.into().normalized_in(bounding_box.size));
+    }
+
+    /// Convenience function over `set_model_view` and `set_line_width`.
+    /// Sets `model_view` and `line_width` according to the bounding box and pre-normalized line
+    /// width.
+    pub fn set_parameters(
+        &self,
+        queue: &wgpu::Queue,
+        bounding_box: BoundingBox,
+        line_width: impl Into<LineWidth>,
+    ) {
+        self.set_parameters_with_transform(queue, bounding_box, line_width, Matrix4::identity());
     }
 
     pub fn set_fill_color(&self, queue: &wgpu::Queue, fill_color: impl Into<Rgba>) {

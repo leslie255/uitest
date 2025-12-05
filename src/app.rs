@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{array, sync::Arc};
 
 use cgmath::*;
 use pollster::FutureExt as _;
@@ -11,7 +11,7 @@ use winit::{
 
 use crate::{
     rendering::{
-        Font, InstancedRectRenderer, InstancedRects, LineWidth, Rect, RectInstance, RectRenderer,
+        BoundingBox, Font, InstancedRectRenderer, InstancedRects, Rect, RectInstance, RectRenderer,
         Text, TextRenderer,
     },
     resources::AppResources,
@@ -108,37 +108,59 @@ impl<'cx> UiState<'cx> {
             },
         );
         let canvas_format = window_canvas.format();
+
+        let rect_renderer = RectRenderer::create(&device, resources, canvas_format).unwrap();
+        let rect = rect_renderer.create_rect(&device);
+        rect.set_fill_color(&queue, Srgb::from_hex(0xFBC000));
+        rect.set_line_color(&queue, Srgb::from_hex(0xFFFFFF));
+        let rect_x = 20.;
+        let rect_y = 20.;
+        let rect_line_width = 4.;
+        rect.set_parameters(
+            &queue,
+            BoundingBox::new(rect_x, rect_y, 400., 200.),
+            rect_line_width,
+        );
+        let rect_background = rect_renderer.create_rect(&device);
+        rect_background.set_fill_color(&queue, Srgb::from_hex(0x303030));
+        rect_background.set_parameters(&queue, BoundingBox::new(-1., -1., 2., 2.), 0.);
+
         let font = Font::load_from_path(resources, "fonts/big_blue_terminal.json").unwrap();
         let text_renderer =
             TextRenderer::create(&device, &queue, font, resources, canvas_format).unwrap();
         let text = text_renderer.create_text(&device, "HELLO, WORLD");
-        let rect_renderer = RectRenderer::create(&device, resources, canvas_format).unwrap();
-        let rect = rect_renderer.create_rect(&device);
-        let rect_background = rect_renderer.create_rect(&device);
+        let model_view_text =
+            Matrix4::from_translation(vec3(rect_x + rect_line_width, rect_y + rect_line_width, 0.))
+                * Matrix4::from_scale(29.);
+        text.set_fg_color(&queue, Srgb::from_hex(0xFFFFFF));
+        text.set_bg_color(&queue, Srgb::from_hex(0x008080));
+        text.set_model_view(&queue, model_view_text);
+
         let instanced_rects_renderer =
             InstancedRectRenderer::create(&device, resources, canvas_format).unwrap();
+        let line_widths = [0., 8., 8., 8.];
+        fn rotated<T, const N: usize>(count: usize, mut xs: [T; N]) -> [T; N] {
+            xs.rotate_right(count);
+            xs
+        }
+        let colors: [u32; _] = [0x408040, 0x008080, 0x404080, 0x804040];
         let instanced_rects = instanced_rects_renderer.create_rects(
             &device,
-            &[
-                RectInstance::new(
-                    Matrix3::from_translation(vec2(100., 400.)) * Matrix3::from_scale(100.),
-                    Srgb::from_hex(0x008080),
-                    Srgb::from_hex(0xFFFFFF),
-                    std::array::from_fn(|i| (i as f32 + 1.) * 4. / 100.),
-                ),
-                RectInstance::new(
-                    Matrix3::from_translation(vec2(300., 400.)) * Matrix3::from_scale(120.),
-                    Srgb::from_hex(0x800080),
-                    Srgb::from_hex(0xFFFFFF),
-                    std::array::from_fn(|i| (i as f32 + 1.) * 4. / 120.),
-                ),
-                RectInstance::new(
-                    Matrix3::from_translation(vec2(520., 400.)) * Matrix3::from_scale(160.),
-                    Srgb::from_hex(0x808000),
-                    Srgb::from_hex(0xFFFFFF),
-                    std::array::from_fn(|i| (i as f32 + 1.) * 4. / 120.),
-                ),
-            ],
+            &array::from_fn::<_, 4, _>(|i| {
+                let i_u = i;
+                let i = i as f32;
+                RectInstance::from_parameters(
+                    BoundingBox::new(
+                        rect_x + 60. * i + (i + 1.) / 2. * (i * 20.),
+                        400. - i * 20.,
+                        40. + i * 20.,
+                        40. + i * 20.,
+                    ),
+                    rotated(i_u, line_widths),
+                )
+                .with_fill_color(Srgb::from_hex(colors[i_u % colors.len()]))
+                .with_line_color(Srgb::from_hex(0xFFFFFF))
+            }),
         );
         let mut self_ = Self {
             resources,
@@ -180,48 +202,15 @@ impl<'cx> UiState<'cx> {
         let projection = canvas.projection(ProjectionSpace::TopLeftDown, -1.0, 1.0);
 
         // Draw background rect.
-        self.rect_background
-            .set_fill_color(&self.queue, Srgb::from_hex(0x303030));
-        self.rect_background.set_model_view(
-            &self.queue,
-            Matrix4::from_translation(vec3(-1.0, -1.0, 0.0)) * Matrix4::from_scale(2.0),
-        );
         self.rect_renderer
             .draw_rect(&mut render_pass, &self.rect_background);
 
         // Draw rect.
-        let rect_width = 400.;
-        let rect_height = 200.;
-        let rect_line_width = 4.;
-        let model_view_rect = Matrix4::from_translation(vec3(20., 20., 0.))
-            * Matrix4::from_nonuniform_scale(rect_width, rect_height, 1.);
-        self.rect
-            .set_fill_color(&self.queue, Srgb::from_hex(0xFBC000));
-        self.rect
-            .set_line_color(&self.queue, Srgb::from_hex(0xFFFFFF));
         self.rect.set_projection(&self.queue, projection);
-        self.rect.set_model_view(&self.queue, model_view_rect);
-        self.rect.set_line_width(
-            &self.queue,
-            LineWidth::PerBorder {
-                left: 4. / rect_width,
-                right: 4. / rect_width,
-                top: 4. / rect_height,
-                bottom: 4. / rect_height,
-            },
-        );
         self.rect_renderer.draw_rect(&mut render_pass, &self.rect);
 
         // Draw text.
-        let model_view_text =
-            Matrix4::from_translation(vec3(20. + rect_line_width, 20. + rect_line_width, 0.))
-                * Matrix4::from_scale(29.);
-        self.text
-            .set_fg_color(&self.queue, Srgb::from_hex(0xFFFFFF));
-        self.text
-            .set_bg_color(&self.queue, Srgb::from_hex(0x008080));
         self.text.set_projection(&self.queue, projection);
-        self.text.set_model_view(&self.queue, model_view_text);
         self.text_renderer.draw_text(&mut render_pass, &self.text);
 
         // Draw instanced rects.

@@ -10,9 +10,14 @@ use cgmath::*;
 use wgpu::util::DeviceExt;
 
 use crate::{
-    rendering::BoundingBox, resources::LoadResourceError, utils::*, wgpu_utils::{
-        vertex_formats::Vertex2dUV, AsBindGroup, CanvasFormat, IndexBuffer, Rgba, UniformBuffer, Vertex, VertexBuffer
-    }, AppResources
+    AppResources,
+    rendering::BoundingBox,
+    resources::LoadResourceError,
+    utils::*,
+    wgpu_utils::{
+        AsBindGroup, CanvasFormat, IndexBuffer, Rgba, UniformBuffer, Vertex, VertexBuffer,
+        vertex_formats::Vertex2dUV,
+    },
 };
 
 fn normalize_coord_in_texture(texture_size: Vector2<u32>, coord: Vector2<u32>) -> Vector2<f32> {
@@ -91,12 +96,12 @@ impl<'cx> Font<'cx> {
         let top_left = self.position_for_glyph(char);
         let atlas_size = vec2(self.atlas_image.width(), self.atlas_image.height());
         let top_left = normalize_coord_in_texture(atlas_size, top_left);
-        BoundingBox {
-            x_min: top_left.x,
-            y_min: top_left.y,
-            width: self.glyph_size_normalised.x,
-            height: self.glyph_size_normalised.x,
-        }
+        BoundingBox::new(
+            top_left.x,
+            top_left.y,
+            self.glyph_size_normalised.x,
+            self.glyph_size_normalised.y,
+        )
     }
 
     pub fn glyph_aspect_ratio(&self) -> f32 {
@@ -392,7 +397,7 @@ impl<'cx> TextRenderer<'cx> {
             let quad = self.font.bounding_box_for_char(char);
             instances.push(TextInstance {
                 position_offset: [column as f32 * self.font.glyph_aspect_ratio(), row as f32],
-                uv_offset: [quad.x_min, quad.y_min],
+                uv_offset: quad.origin.into(),
             });
             column += 1;
         }

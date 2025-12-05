@@ -3,7 +3,7 @@ use cgmath::*;
 
 use crate::{
     AppResources,
-    rendering::LineWidth,
+    rendering::{BoundingBox, LineWidth},
     resources::LoadResourceError,
     utils::*,
     wgpu_utils::{AsBindGroup, CanvasFormat, Rgba, UniformBuffer, Vertex, VertexBuffer},
@@ -123,7 +123,7 @@ struct BindGroup {
     projection: UniformBuffer<[[f32; 4]; 4]>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Zeroable, Pod)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Zeroable, Pod)]
 #[repr(C)]
 pub struct RectInstance {
     model_view_col_0: [f32; 3],
@@ -135,20 +135,56 @@ pub struct RectInstance {
 }
 
 impl RectInstance {
-    pub fn new(
-        model_view: Matrix3<f32>,
-        fill_color: impl Into<Rgba>,
-        line_color: impl Into<Rgba>,
-        line_width: impl Into<LineWidth>,
-    ) -> Self {
+    pub fn new() -> Self {
+        Self::zeroed()
+    }
+
+    pub fn with_model_view(self, model_view: Matrix3<f32>) -> Self {
         Self {
             model_view_col_0: model_view.x.into(),
             model_view_col_1: model_view.y.into(),
             model_view_col_2: model_view.z.into(),
-            fill_color: fill_color.into().to_array(),
-            line_color: line_color.into().to_array(),
-            line_width: line_width.into().to_array(),
+            ..self
         }
+    }
+
+    pub fn with_normalized_line_width(self, line_width: impl Into<LineWidth>) -> Self {
+        Self {
+            line_width: line_width.into().to_array(),
+            ..self
+        }
+    }
+
+    pub fn with_fill_color(self, fill_color: impl Into<Rgba>) -> Self {
+        Self {
+            fill_color: fill_color.into().to_array(),
+            ..self
+        }
+    }
+
+    pub fn with_line_color(self, line_color: impl Into<Rgba>) -> Self {
+        Self {
+            line_color: line_color.into().to_array(),
+            ..self
+        }
+    }
+
+    pub fn from_parameters_with_transform(
+        bounding_box: BoundingBox,
+        line_width: impl Into<LineWidth>,
+        transform: Matrix3<f32>,
+    ) -> Self {
+        let model_view = transform
+            * Matrix3::from_translation(bounding_box.origin.to_vec())
+            * Matrix3::from_nonuniform_scale(bounding_box.size.width, bounding_box.size.height);
+        let line_width_normalized = line_width.into().normalized_in(bounding_box.size);
+        Self::new()
+            .with_model_view(model_view)
+            .with_normalized_line_width(line_width_normalized)
+    }
+
+    pub fn from_parameters(bounding_box: BoundingBox, line_width: impl Into<LineWidth>) -> Self {
+        Self::from_parameters_with_transform(bounding_box, line_width, Matrix3::identity())
     }
 }
 

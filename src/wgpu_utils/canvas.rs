@@ -7,12 +7,11 @@ use cgmath::*;
 use derive_more::{Display, Error};
 use winit::{dpi::PhysicalSize, window::Window};
 
-use crate::utils::*;
+use crate::{rendering::RectSize, utils::*};
 
 pub trait Canvas {
     fn format(&self) -> CanvasFormat;
-    /// TODO: Have an dedicated type instead of using `Vector2` for rect size.
-    fn logical_size(&self) -> Vector2<f32>;
+    fn logical_size(&self) -> RectSize;
     fn begin_drawing(&self) -> Result<CanvasView, Box<dyn Error>>;
     fn finish_drawing(&self) -> Result<(), Box<dyn Error>>;
 }
@@ -27,13 +26,13 @@ pub struct CanvasFormat {
 pub struct CanvasView {
     pub color_texture_view: wgpu::TextureView,
     pub depth_stencil_texture_view: Option<wgpu::TextureView>,
-    pub logical_size: Vector2<f32>,
+    pub logical_size: RectSize,
 }
 
 impl CanvasView {
     pub fn projection(&self, space: ProjectionSpace, near: f32, far: f32) -> Matrix4<f32> {
-        let w = self.logical_size.x;
-        let h = self.logical_size.y;
+        let w = self.logical_size.width;
+        let h = self.logical_size.height;
         let w_half = 0.5 * w;
         let h_half = 0.5 * h;
         use ProjectionSpace::*;
@@ -62,7 +61,7 @@ pub struct TextureCanvas {
     color_texture: wgpu::Texture,
     depth_stencil_texture: Option<wgpu::Texture>,
     format: CanvasFormat,
-    logical_size: Vector2<f32>,
+    logical_size: RectSize,
 }
 
 impl TextureCanvas {
@@ -70,7 +69,7 @@ impl TextureCanvas {
         color_texture: wgpu::Texture,
         depth_stencil_texture: Option<wgpu::Texture>,
         format: CanvasFormat,
-        logical_size: Vector2<f32>,
+        logical_size: RectSize,
     ) -> Self {
         Self {
             color_texture,
@@ -86,7 +85,7 @@ impl Canvas for TextureCanvas {
         self.format
     }
 
-    fn logical_size(&self) -> Vector2<f32> {
+    fn logical_size(&self) -> RectSize {
         self.logical_size
     }
 
@@ -111,7 +110,7 @@ pub struct WindowCanvas<'window> {
     window_surface: wgpu::Surface<'window>,
     depth_stencil_texture: Option<wgpu::Texture>,
     format: CanvasFormat,
-    logical_size: Vector2<f32>,
+    logical_size: RectSize,
     surface_texture: Mutex<Option<wgpu::SurfaceTexture>>,
     surface_config: wgpu::wgt::SurfaceConfiguration<Vec<wgpu::TextureFormat>>,
 }
@@ -137,7 +136,7 @@ impl<'window> WindowCanvas<'window> {
         window_surface: wgpu::Surface<'window>,
         depth_stencil_texture: Option<wgpu::Texture>,
         format: CanvasFormat,
-        logical_size: Vector2<f32>,
+        logical_size: RectSize,
         surface_config: wgpu::SurfaceConfiguration,
     ) -> Self {
         Self {
@@ -180,7 +179,7 @@ impl<'window> WindowCanvas<'window> {
                 depth_stencil_format: None,
             },
             // reconfigure_for_size would initialise this field.
-            vec2(0., 0.),
+            RectSize::new(0., 0.),
             surface_config(color_format),
         );
         self_.reconfigure_for_size(device, window_size, window_scale_factor, None);
@@ -195,7 +194,7 @@ impl<'window> WindowCanvas<'window> {
         new_depth_stencil_texture: Option<wgpu::Texture>,
     ) {
         let logical_size = size.to_logical::<f32>(scale_factor);
-        self.logical_size = vec2(logical_size.width, logical_size.height);
+        self.logical_size = RectSize::new(logical_size.width, logical_size.height);
         self.surface_config.width = size.width;
         self.surface_config.height = size.height;
         self.window_surface.configure(device, &self.surface_config);
@@ -220,7 +219,7 @@ impl<'a> Canvas for WindowCanvas<'a> {
         self.format
     }
 
-    fn logical_size(&self) -> Vector2<f32> {
+    fn logical_size(&self) -> RectSize {
         self.logical_size
     }
 

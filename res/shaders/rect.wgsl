@@ -29,7 +29,7 @@ fn vs_main(@builtin(vertex_index) index: u32) -> VertexOutput {
 
 @fragment
 fn fs_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
-    let distance = vec4<f32>(vertex.uv, vec2<f32>(1.) - vertex.uv).xzyw;
+    let distance = vec4<f32>(vertex.uv, vec2<f32>(1.) - vertex.uv);
     return select(
             fill_color,
             line_color,
