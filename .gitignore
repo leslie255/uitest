@@ -1,6 +1,7 @@
 params.bin
 loss_graph.svg
 /target
+/derive/target/
 
 # Created by https://www.toptal.com/developers/gitignore/api/macos,windows,linux,vim,emacs,visualstudiocode,rust-analyzer
 # Edit at https://www.toptal.com/developers/gitignore?templates=macos,windows,linux,vim,emacs,visualstudiocode,rust-analyzer

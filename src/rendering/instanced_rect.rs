@@ -2,82 +2,27 @@ use bytemuck::{Pod, Zeroable};
 use cgmath::*;
 
 use crate::{
-    resources::{AppResources, LoadResourceError},
+    AppResources,
+    resources::LoadResourceError,
     utils::*,
-    wgpu_utils::{AsBindGroup, CanvasFormat, Rgba, UniformBuffer},
+    wgpu_utils::{AsBindGroup, CanvasFormat, Rgba, UniformBuffer, Vertex, VertexBuffer},
 };
 
-#[derive(Default, Debug, Clone, Copy, PartialEq, Zeroable, Pod)]
-#[repr(C)]
-pub struct BoundingBox {
-    pub x_min: f32,
-    pub y_min: f32,
-    pub width: f32,
-    pub height: f32,
-}
-
-impl BoundingBox {
-    pub fn x_max(self) -> f32 {
-        self.x_min + self.width
-    }
-
-    pub fn y_max(self) -> f32 {
-        self.y_min + self.height
-    }
-
-    pub fn as_rect_size(self) -> RectSize {
-        RectSize {
-            width: self.width,
-            height: self.height,
-        }
-    }
-}
-
-#[derive(Default, Debug, Clone, Copy, PartialEq, Zeroable, Pod)]
-#[repr(C)]
-pub struct RectSize {
-    pub width: f32,
-    pub height: f32,
-}
-
-#[derive(Debug, Clone, AsBindGroup)]
-struct RectBindGroup {
-    #[binding(0)]
-    #[uniform]
-    model_view: UniformBuffer<[[f32; 4]; 4]>,
-
-    #[binding(1)]
-    #[uniform]
-    projection: UniformBuffer<[[f32; 4]; 4]>,
-
-    #[binding(2)]
-    #[uniform]
-    fill_color: UniformBuffer<Rgba>,
-
-    #[binding(3)]
-    #[uniform]
-    line_color: UniformBuffer<Rgba>,
-
-    #[binding(4)]
-    #[uniform]
-    line_width: UniformBuffer<[f32; 2]>,
-}
-
 #[derive(Debug, Clone)]
-pub struct RectRenderer<'cx> {
+pub struct InstancedRectRenderer<'cx> {
     pipeline: wgpu::RenderPipeline,
     bind_group_layout: wgpu::BindGroupLayout,
     shader: &'cx wgpu::ShaderModule,
 }
 
-impl<'cx> RectRenderer<'cx> {
+impl<'cx> InstancedRectRenderer<'cx> {
     pub fn create(
         device: &wgpu::Device,
         resources: &'cx AppResources,
         canvas_format: CanvasFormat,
     ) -> Result<Self, LoadResourceError> {
-        let shader = resources.load_shader("shaders/rect.wgsl", device)?;
-        let bind_group_layout = RectBindGroup::create_bind_group_layout(device);
+        let shader = resources.load_shader("shaders/instanced_rect.wgsl", device)?;
+        let bind_group_layout = BindGroup::create_bind_group_layout(device);
         let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
             label: None,
             bind_group_layouts: &[&bind_group_layout],
@@ -90,7 +35,7 @@ impl<'cx> RectRenderer<'cx> {
                 module: shader,
                 entry_point: Some("vs_main"),
                 compilation_options: the_default(),
-                buffers: &[],
+                buffers: &[RectInstance::LAYOUT],
             },
             fragment: Some(wgpu::FragmentState {
                 module: shader,
@@ -130,52 +75,97 @@ impl<'cx> RectRenderer<'cx> {
         })
     }
 
-    pub fn create_rect(&self, device: &wgpu::Device) -> Rect {
-        let bind_group = RectBindGroup {
-            model_view: UniformBuffer::create_init(device, Matrix4::identity().into()),
+    pub fn create_rects(
+        &self,
+        device: &wgpu::Device,
+        instances: &[RectInstance],
+    ) -> InstancedRects {
+        let instance_buffer = VertexBuffer::create_init(device, instances);
+        let bind_group = BindGroup {
             projection: UniformBuffer::create_init(device, Matrix4::identity().into()),
-            fill_color: UniformBuffer::create_init(device, Rgba::from_hex(0xFFFFFFFF)),
-            line_color: UniformBuffer::create_init(device, Rgba::from_hex(0xFFFFFFFF)),
-            line_width: UniformBuffer::create_init(device, [0., 0.]),
         };
         let wgpu_bind_group = bind_group.create_bind_group(&self.bind_group_layout, device);
-        Rect {
+        InstancedRects {
             bind_group,
             wgpu_bind_group,
+            instance_buffer,
+            n_instances: instances.len() as u32,
         }
     }
 
-    pub fn draw_rect(&self, render_pass: &mut wgpu::RenderPass, rect: &Rect) {
+    pub fn draw_rects(
+        &self,
+        render_pass: &mut wgpu::RenderPass,
+        rects: &InstancedRects,
+    ) {
         render_pass.set_pipeline(&self.pipeline);
-        render_pass.set_bind_group(0, &rect.wgpu_bind_group, &[]);
-        render_pass.draw(0..6, 0..1);
+        render_pass.set_bind_group(0, &rects.wgpu_bind_group, &[]);
+        render_pass.set_vertex_buffer(0, rects.instance_buffer.slice(..));
+        render_pass.draw(0..6, 0..rects.n_instances);
     }
 }
 
 #[derive(Debug, Clone)]
-pub struct Rect {
-    bind_group: RectBindGroup,
+pub struct InstancedRects {
+    bind_group: BindGroup,
     wgpu_bind_group: wgpu::BindGroup,
+    instance_buffer: VertexBuffer<RectInstance>,
+    n_instances: u32,
 }
 
-impl Rect {
-    pub fn set_model_view(&self, queue: &wgpu::Queue, model_view: Matrix4<f32>) {
-        self.bind_group.model_view.write(model_view.into(), queue);
-    }
-
+impl InstancedRects {
     pub fn set_projection(&self, queue: &wgpu::Queue, projection: Matrix4<f32>) {
         self.bind_group.projection.write(projection.into(), queue);
     }
+}
 
-    pub fn set_fill_color(&self, queue: &wgpu::Queue, fill_color: impl Into<Rgba>) {
-        self.bind_group.fill_color.write(fill_color.into(), queue);
-    }
+#[derive(Debug, Clone, AsBindGroup)]
+struct BindGroup {
+    #[binding(0)]
+    #[uniform]
+    projection: UniformBuffer<[[f32; 4]; 4]>,
+}
 
-    pub fn set_line_color(&self, queue: &wgpu::Queue, line_color: impl Into<Rgba>) {
-        self.bind_group.line_color.write(line_color.into(), queue);
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Zeroable, Pod)]
+#[repr(C)]
+pub struct RectInstance {
+    model_view_col_0: [f32; 3],
+    model_view_col_1: [f32; 3],
+    model_view_col_2: [f32; 3],
+    fill_color: [f32; 4],
+    line_color: [f32; 4],
+    line_width: [f32; 2],
+}
 
-    pub fn set_line_width(&self, queue: &wgpu::Queue, line_width: [f32; 2]) {
-        self.bind_group.line_width.write(line_width, queue);
+impl RectInstance {
+    pub fn new(
+        model_view: Matrix3<f32>,
+        fill_color: impl Into<Rgba>,
+        line_color: impl Into<Rgba>,
+        line_width: [f32; 2],
+    ) -> Self {
+        Self {
+            model_view_col_0: model_view.x.into(),
+            model_view_col_1: model_view.y.into(),
+            model_view_col_2: model_view.z.into(),
+            fill_color: fill_color.into().to_array(),
+            line_color: line_color.into().to_array(),
+            line_width,
+        }
     }
+}
+
+impl Vertex for RectInstance {
+    const LAYOUT: wgpu::VertexBufferLayout<'static> = wgpu::VertexBufferLayout {
+        array_stride: size_of::<Self>() as u64,
+        step_mode: wgpu::VertexStepMode::Instance,
+        attributes: &wgpu::vertex_attr_array! [
+            0 => Float32x3, // model_view_col_0
+            1 => Float32x3, // model_view_col_1
+            2 => Float32x3, // model_view_col_2
+            3 => Float32x4, // fill_color
+            4 => Float32x4, // line_color
+            5 => Float32x2, // line_width
+        ],
+    };
 }

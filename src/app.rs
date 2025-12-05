@@ -10,7 +10,10 @@ use winit::{
 };
 
 use crate::{
-    rendering::{Font, Rect, RectRenderer, Text, TextRenderer},
+    rendering::{
+        Font, InstancedRectRenderer, InstancedRects, Rect, RectInstance, RectRenderer, Text,
+        TextRenderer,
+    },
     resources::AppResources,
     utils::*,
     wgpu_utils::{Canvas as _, CanvasView, ProjectionSpace, Srgb, WindowCanvas},
@@ -79,8 +82,10 @@ struct UiState<'cx> {
     text_renderer: TextRenderer<'cx>,
     text: Text,
     rect_renderer: RectRenderer<'cx>,
-    background_rect: Rect,
+    rect_background: Rect,
     rect: Rect,
+    instanced_rects_renderer: InstancedRectRenderer<'cx>,
+    instanced_rects: InstancedRects,
 }
 
 impl<'cx> UiState<'cx> {
@@ -102,14 +107,33 @@ impl<'cx> UiState<'cx> {
                 present_mode: wgpu::PresentMode::AutoVsync,
             },
         );
+        let canvas_format = window_canvas.format();
         let font = Font::load_from_path(resources, "fonts/big_blue_terminal.json").unwrap();
         let text_renderer =
-            TextRenderer::create(&device, &queue, font, resources, window_canvas.format()).unwrap();
+            TextRenderer::create(&device, &queue, font, resources, canvas_format).unwrap();
         let text = text_renderer.create_text(&device, "HELLO, WORLD");
-        let rect_renderer =
-            RectRenderer::create(&device, resources, window_canvas.format()).unwrap();
+        let rect_renderer = RectRenderer::create(&device, resources, canvas_format).unwrap();
         let rect = rect_renderer.create_rect(&device);
-        let background_rect = rect_renderer.create_rect(&device);
+        let rect_background = rect_renderer.create_rect(&device);
+        let instanced_rects_renderer =
+            InstancedRectRenderer::create(&device, resources, canvas_format).unwrap();
+        let instanced_rects = instanced_rects_renderer.create_rects(
+            &device,
+            &[
+                RectInstance::new(
+                    Matrix3::from_translation(vec2(100., 100.)) * Matrix3::from_scale(100.),
+                    Srgb::from_hex(0x008080),
+                    Srgb::from_hex(0xFFFFFF),
+                    [4. / 100., 4. / 100.],
+                ),
+                RectInstance::new(
+                    Matrix3::from_translation(vec2(300., 100.)) * Matrix3::from_scale(100.),
+                    Srgb::from_hex(0x800080),
+                    Srgb::from_hex(0xFFFFFF),
+                    [4. / 100., 4. / 100.],
+                ),
+            ],
+        );
         let mut self_ = Self {
             resources,
             device,
@@ -120,7 +144,9 @@ impl<'cx> UiState<'cx> {
             text,
             rect_renderer,
             rect,
-            background_rect,
+            rect_background,
+            instanced_rects_renderer,
+            instanced_rects,
         };
         self_.window_resized();
         self_
@@ -148,14 +174,14 @@ impl<'cx> UiState<'cx> {
         let projection = canvas.projection(ProjectionSpace::TopLeftDown, -1.0, 1.0);
 
         // Draw background rect.
-        self.background_rect
+        self.rect_background
             .set_fill_color(&self.queue, Srgb::from_hex(0x303030));
-        self.background_rect.set_model_view(
+        self.rect_background.set_model_view(
             &self.queue,
             Matrix4::from_translation(vec3(-1.0, -1.0, 0.0)) * Matrix4::from_scale(2.0),
         );
         self.rect_renderer
-            .draw_rect(&mut render_pass, &self.background_rect);
+            .draw_rect(&mut render_pass, &self.rect_background);
 
         // Draw rect.
         let rect_width = 400.;
@@ -186,6 +212,11 @@ impl<'cx> UiState<'cx> {
         self.text.set_projection(&self.queue, projection);
         self.text.set_model_view(&self.queue, model_view_text);
         self.text_renderer.draw_text(&mut render_pass, &self.text);
+
+        // Draw instanced rects.
+        self.instanced_rects.set_projection(&self.queue, projection);
+        self.instanced_rects_renderer
+            .draw_rects(&mut render_pass, &self.instanced_rects);
 
         drop(render_pass);
 

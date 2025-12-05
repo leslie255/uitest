@@ -10,13 +10,9 @@ use cgmath::*;
 use wgpu::util::DeviceExt;
 
 use crate::{
-    AppResources,
-    resources::LoadResourceError,
-    utils::*,
-    wgpu_utils::{
-        AsBindGroup, CanvasFormat, IndexBuffer, Rgba, UniformBuffer, Vertex as _, VertexBuffer,
-        vertex_formats::Vertex2dUV,
-    },
+    rendering::BoundingBox, resources::LoadResourceError, utils::*, wgpu_utils::{
+        vertex_formats::Vertex2dUV, AsBindGroup, CanvasFormat, IndexBuffer, Rgba, UniformBuffer, Vertex, VertexBuffer
+    }, AppResources
 };
 
 fn normalize_coord_in_texture(texture_size: Vector2<u32>, coord: Vector2<u32>) -> Vector2<f32> {
@@ -43,6 +39,7 @@ pub struct Font<'cx> {
     present_end: u8,
     glyphs_per_line: u32,
     glyph_size: Vector2<u32>,
+    glyph_size_normalised: Vector2<f32>,
     atlas_image: &'cx image::RgbaImage,
 }
 
@@ -56,11 +53,15 @@ impl<'cx> Font<'cx> {
         let atlas_image_subpath = resources.solve_relative_subpath(json_subpath, &font_meta.path);
         let atlas_image = resources.load_image(&atlas_image_subpath)?;
         Ok(Self {
-            atlas_image,
             present_start: font_meta.present_start,
             present_end: font_meta.present_end,
             glyphs_per_line: font_meta.glyphs_per_line,
             glyph_size: vec2(font_meta.glyph_width, font_meta.glyph_height),
+            glyph_size_normalised: vec2(
+                font_meta.glyph_width as f32 / atlas_image.width() as f32,
+                font_meta.glyph_height as f32 / atlas_image.height() as f32,
+            ),
+            atlas_image,
         })
     }
 
@@ -88,15 +89,13 @@ impl<'cx> Font<'cx> {
 
     pub fn bounding_box_for_char(&self, char: char) -> BoundingBox {
         let top_left = self.position_for_glyph(char);
-        let bottom_right = top_left.add_element_wise(self.glyph_size);
         let atlas_size = vec2(self.atlas_image.width(), self.atlas_image.height());
         let top_left = normalize_coord_in_texture(atlas_size, top_left);
-        let bottom_right = normalize_coord_in_texture(atlas_size, bottom_right);
         BoundingBox {
-            left: top_left.x,
-            right: bottom_right.x,
-            bottom: bottom_right.y,
-            top: top_left.y,
+            x_min: top_left.x,
+            y_min: top_left.y,
+            width: self.glyph_size_normalised.x,
+            height: self.glyph_size_normalised.x,
         }
     }
 
@@ -107,14 +106,6 @@ impl<'cx> Font<'cx> {
     pub fn glyph_size(&self) -> Vector2<u32> {
         self.glyph_size
     }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct BoundingBox {
-    pub left: f32,
-    pub right: f32,
-    pub bottom: f32,
-    pub top: f32,
 }
 
 #[derive(Debug, Clone, AsBindGroup)]
@@ -151,14 +142,7 @@ pub struct TextInstance {
     pub uv_offset: [f32; 2],
 }
 
-impl TextInstance {
-    pub fn new(position_offset: [f32; 2], uv_offset: [f32; 2]) -> Self {
-        Self {
-            position_offset,
-            uv_offset,
-        }
-    }
-
+impl Vertex for TextInstance {
     const LAYOUT: wgpu::VertexBufferLayout<'static> = wgpu::VertexBufferLayout {
         array_stride: size_of::<Self>() as u64,
         step_mode: wgpu::VertexStepMode::Instance,
@@ -177,12 +161,21 @@ impl TextInstance {
     };
 }
 
+impl TextInstance {
+    pub fn new(position_offset: [f32; 2], uv_offset: [f32; 2]) -> Self {
+        Self {
+            position_offset,
+            uv_offset,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Text {
     bind_group: TextBindGroup,
     wgpu_bind_group: wgpu::BindGroup,
-    instance_buffer: wgpu::Buffer,
     n_instances: u32,
+    instance_buffer: VertexBuffer<TextInstance>,
 }
 
 impl Text {
@@ -368,8 +361,8 @@ impl<'cx> TextRenderer<'cx> {
         Text {
             bind_group,
             wgpu_bind_group,
-            instance_buffer,
             n_instances,
+            instance_buffer,
         }
     }
 
@@ -377,7 +370,11 @@ impl<'cx> TextRenderer<'cx> {
         (text.n_instances, text.instance_buffer) = self.create_instance_buffer(device, str);
     }
 
-    fn create_instance_buffer(&self, device: &wgpu::Device, str: &str) -> (u32, wgpu::Buffer) {
+    fn create_instance_buffer(
+        &self,
+        device: &wgpu::Device,
+        str: &str,
+    ) -> (u32, VertexBuffer<TextInstance>) {
         let mut instances: Vec<TextInstance> = Vec::new();
         let mut row = 0u32;
         let mut column = 0u32;
@@ -395,15 +392,11 @@ impl<'cx> TextRenderer<'cx> {
             let quad = self.font.bounding_box_for_char(char);
             instances.push(TextInstance {
                 position_offset: [column as f32 * self.font.glyph_aspect_ratio(), row as f32],
-                uv_offset: [quad.left, quad.top],
+                uv_offset: [quad.x_min, quad.y_min],
             });
             column += 1;
         }
-        let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: None,
-            contents: bytemuck::cast_slice(&instances),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
+        let instance_buffer = VertexBuffer::create_init(device, &instances);
         (instances.len() as u32, instance_buffer)
     }
 }
