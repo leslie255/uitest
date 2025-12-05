@@ -1,5 +1,6 @@
 use bytemuck::{Pod, Zeroable};
 use cgmath::*;
+use derive_more::From;
 
 use crate::{
     resources::{AppResources, LoadResourceError},
@@ -60,7 +61,62 @@ struct RectBindGroup {
 
     #[binding(4)]
     #[uniform]
-    line_width: UniformBuffer<[f32; 2]>,
+    line_width: UniformBuffer<[f32; 4]>,
+}
+
+#[derive(Debug, Clone, Copy, From)]
+pub enum LineWidth {
+    /// All borders have the same line width.
+    Uniform(f32),
+    /// Borders have different line widths.
+    PerBorder {
+        left: f32,
+        right: f32,
+        top: f32,
+        bottom: f32,
+    },
+}
+
+impl LineWidth {
+    pub const fn to_array(self) -> [f32; 4] {
+        match self {
+            Self::Uniform(width) => [width, width, width, width],
+            Self::PerBorder {
+                left,
+                right,
+                top,
+                bottom,
+            } => [left, right, top, bottom],
+        }
+    }
+
+    pub fn map(self, mut transform: impl FnMut(f32) -> f32) -> Self {
+        match self {
+            Self::Uniform(f) => Self::Uniform(transform(f)),
+            Self::PerBorder {
+                left,
+                right,
+                top,
+                bottom,
+            } => Self::PerBorder {
+                left: transform(left),
+                right: transform(right),
+                top: transform(top),
+                bottom: transform(bottom),
+            },
+        }
+    }
+}
+
+impl From<[f32; 4]> for LineWidth {
+    fn from([left, right, top, bottom]: [f32; 4]) -> Self {
+        Self::PerBorder {
+            left,
+            right,
+            top,
+            bottom,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -136,7 +192,7 @@ impl<'cx> RectRenderer<'cx> {
             projection: UniformBuffer::create_init(device, Matrix4::identity().into()),
             fill_color: UniformBuffer::create_init(device, Rgba::from_hex(0xFFFFFFFF)),
             line_color: UniformBuffer::create_init(device, Rgba::from_hex(0xFFFFFFFF)),
-            line_width: UniformBuffer::create_init(device, [0., 0.]),
+            line_width: UniformBuffer::create_init(device, [0., 0., 0., 0.]),
         };
         let wgpu_bind_group = bind_group.create_bind_group(&self.bind_group_layout, device);
         Rect {
@@ -175,7 +231,9 @@ impl Rect {
         self.bind_group.line_color.write(line_color.into(), queue);
     }
 
-    pub fn set_line_width(&self, queue: &wgpu::Queue, line_width: [f32; 2]) {
-        self.bind_group.line_width.write(line_width, queue);
+    pub fn set_line_width(&self, queue: &wgpu::Queue, line_width: impl Into<LineWidth>) {
+        self.bind_group
+            .line_width
+            .write(line_width.into().to_array(), queue);
     }
 }

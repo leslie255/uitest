@@ -3,6 +3,7 @@ use cgmath::*;
 
 use crate::{
     AppResources,
+    rendering::LineWidth,
     resources::LoadResourceError,
     utils::*,
     wgpu_utils::{AsBindGroup, CanvasFormat, Rgba, UniformBuffer, Vertex, VertexBuffer},
@@ -93,11 +94,7 @@ impl<'cx> InstancedRectRenderer<'cx> {
         }
     }
 
-    pub fn draw_rects(
-        &self,
-        render_pass: &mut wgpu::RenderPass,
-        rects: &InstancedRects,
-    ) {
+    pub fn draw_rects(&self, render_pass: &mut wgpu::RenderPass, rects: &InstancedRects) {
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_bind_group(0, &rects.wgpu_bind_group, &[]);
         render_pass.set_vertex_buffer(0, rects.instance_buffer.slice(..));
@@ -134,7 +131,7 @@ pub struct RectInstance {
     model_view_col_2: [f32; 3],
     fill_color: [f32; 4],
     line_color: [f32; 4],
-    line_width: [f32; 2],
+    line_width: [f32; 4],
 }
 
 impl RectInstance {
@@ -142,7 +139,7 @@ impl RectInstance {
         model_view: Matrix3<f32>,
         fill_color: impl Into<Rgba>,
         line_color: impl Into<Rgba>,
-        line_width: [f32; 2],
+        line_width: impl Into<LineWidth>,
     ) -> Self {
         Self {
             model_view_col_0: model_view.x.into(),
@@ -150,7 +147,7 @@ impl RectInstance {
             model_view_col_2: model_view.z.into(),
             fill_color: fill_color.into().to_array(),
             line_color: line_color.into().to_array(),
-            line_width,
+            line_width: line_width.into().to_array(),
         }
     }
 }
@@ -165,7 +162,7 @@ impl Vertex for RectInstance {
             2 => Float32x3, // model_view_col_2
             3 => Float32x4, // fill_color
             4 => Float32x4, // line_color
-            5 => Float32x2, // line_width
+            5 => Float32x4, // line_width
         ],
     };
 }

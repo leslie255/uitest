@@ -15,7 +15,7 @@ struct InstanceInput {
     @location(2) model_view_col_2: vec3<f32>,
     @location(3) fill_color: vec4<f32>,
     @location(4) line_color: vec4<f32>,
-    @location(5) line_width: vec2<f32>,
+    @location(5) line_width: vec4<f32>,
 };
 
 struct VertexOutput {
@@ -23,7 +23,7 @@ struct VertexOutput {
     @location(0) uv: vec2<f32>,
     @location(1) fill_color: vec4<f32>,
     @location(2) line_color: vec4<f32>,
-    @location(3) line_width: vec2<f32>,
+    @location(3) line_width: vec4<f32>,
 };
 
 @vertex
@@ -46,10 +46,10 @@ fn vs_main(@builtin(vertex_index) index: u32, instance: InstanceInput) -> Vertex
 
 @fragment
 fn fs_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
-    let distance = min(vertex.uv, vec2<f32>(1., 1.) - vertex.uv);
+    let distance = vec4<f32>(vertex.uv, vec2<f32>(1.) - vertex.uv).xzyw;
     return select(
             vertex.fill_color,
             vertex.line_color,
-            distance.x < vertex.line_width.x || distance.y < vertex.line_width.y,
+            any(distance < vertex.line_width),
         );
 }

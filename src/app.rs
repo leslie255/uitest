@@ -11,8 +11,8 @@ use winit::{
 
 use crate::{
     rendering::{
-        Font, InstancedRectRenderer, InstancedRects, Rect, RectInstance, RectRenderer, Text,
-        TextRenderer,
+        Font, InstancedRectRenderer, InstancedRects, LineWidth, Rect, RectInstance, RectRenderer,
+        Text, TextRenderer,
     },
     resources::AppResources,
     utils::*,
@@ -121,16 +121,22 @@ impl<'cx> UiState<'cx> {
             &device,
             &[
                 RectInstance::new(
-                    Matrix3::from_translation(vec2(100., 100.)) * Matrix3::from_scale(100.),
+                    Matrix3::from_translation(vec2(100., 400.)) * Matrix3::from_scale(100.),
                     Srgb::from_hex(0x008080),
                     Srgb::from_hex(0xFFFFFF),
-                    [4. / 100., 4. / 100.],
+                    std::array::from_fn(|i| (i as f32 + 1.) * 4. / 100.),
                 ),
                 RectInstance::new(
-                    Matrix3::from_translation(vec2(300., 100.)) * Matrix3::from_scale(100.),
+                    Matrix3::from_translation(vec2(300., 400.)) * Matrix3::from_scale(120.),
                     Srgb::from_hex(0x800080),
                     Srgb::from_hex(0xFFFFFF),
-                    [4. / 100., 4. / 100.],
+                    std::array::from_fn(|i| (i as f32 + 1.) * 4. / 120.),
+                ),
+                RectInstance::new(
+                    Matrix3::from_translation(vec2(520., 400.)) * Matrix3::from_scale(160.),
+                    Srgb::from_hex(0x808000),
+                    Srgb::from_hex(0xFFFFFF),
+                    std::array::from_fn(|i| (i as f32 + 1.) * 4. / 120.),
                 ),
             ],
         );
@@ -197,7 +203,12 @@ impl<'cx> UiState<'cx> {
         self.rect.set_model_view(&self.queue, model_view_rect);
         self.rect.set_line_width(
             &self.queue,
-            [rect_line_width / rect_width, rect_line_width / rect_height],
+            LineWidth::PerBorder {
+                left: 4. / rect_width,
+                right: 4. / rect_width,
+                top: 4. / rect_height,
+                bottom: 4. / rect_height,
+            },
         );
         self.rect_renderer.draw_rect(&mut render_pass, &self.rect);
 
@@ -221,7 +232,6 @@ impl<'cx> UiState<'cx> {
         drop(render_pass);
 
         self.queue.submit([encoder.finish()]);
-        self.window.pre_present_notify();
     }
 
     fn window_event(
@@ -235,6 +245,7 @@ impl<'cx> UiState<'cx> {
             WindowEvent::RedrawRequested => {
                 let canvas_view = self.window_canvas.begin_drawing().unwrap();
                 self.frame(canvas_view);
+                self.window.pre_present_notify();
                 self.window_canvas.finish_drawing().unwrap();
             }
             WindowEvent::CloseRequested => event_loop.exit(),

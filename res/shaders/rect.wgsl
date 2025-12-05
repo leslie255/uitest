@@ -2,7 +2,7 @@
 @group(0) @binding(1) var<uniform> projection: mat4x4<f32>;
 @group(0) @binding(2) var<uniform> fill_color: vec4<f32>;
 @group(0) @binding(3) var<uniform> line_color: vec4<f32>;
-@group(0) @binding(4) var<uniform> line_width: vec2<f32>;
+@group(0) @binding(4) var<uniform> line_width: vec4<f32>;
 
 const vertices = array<vec2<f32>, 6>(
     vec2<f32>(0., 0.),
@@ -29,10 +29,10 @@ fn vs_main(@builtin(vertex_index) index: u32) -> VertexOutput {
 
 @fragment
 fn fs_main(vertex: VertexOutput) -> @location(0) vec4<f32> {
-    let distance = min(vertex.uv, vec2<f32>(1., 1.) - vertex.uv);
+    let distance = vec4<f32>(vertex.uv, vec2<f32>(1.) - vertex.uv).xzyw;
     return select(
             fill_color,
             line_color,
-            distance.x < line_width.x || distance.y < line_width.y,
+            any(distance < line_width),
         );
 }
