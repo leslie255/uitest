@@ -7,7 +7,7 @@ use cgmath::*;
 use derive_more::{Display, Error};
 use winit::{dpi::PhysicalSize, window::Window};
 
-use crate::{rendering::RectSize, utils::*};
+use crate::{shapes::RectSize, utils::*};
 
 pub trait Canvas {
     fn format(&self) -> CanvasFormat;

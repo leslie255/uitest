@@ -3,7 +3,7 @@ use cgmath::*;
 
 use crate::{
     AppResources,
-    rendering::{BoundingBox, LineWidth},
+    shapes::{BoundingBox, LineWidth},
     resources::LoadResourceError,
     utils::*,
     wgpu_utils::{AsBindGroup, CanvasFormat, Rgba, UniformBuffer, Vertex, VertexBuffer},

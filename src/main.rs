@@ -7,7 +7,7 @@ pub mod wgpu_utils;
 
 pub mod resources;
 
-pub mod rendering;
+pub mod shapes;
 
 pub(crate) mod utils;
 

@@ -10,7 +10,7 @@ use winit::{
 };
 
 use crate::{
-    rendering::{
+    shapes::{
         BoundingBox, Font, InstancedRectRenderer, InstancedRects, Rect, RectInstance, RectRenderer,
         Text, TextRenderer,
     },

@@ -11,7 +11,7 @@ use wgpu::util::DeviceExt;
 
 use crate::{
     AppResources,
-    rendering::BoundingBox,
+    shapes::BoundingBox,
     resources::LoadResourceError,
     utils::*,
     wgpu_utils::{
