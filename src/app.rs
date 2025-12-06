@@ -106,9 +106,7 @@ struct UiState<'cx> {
     text_renderer: TextRenderer<'cx>,
     rect_renderer: RectRenderer<'cx>,
     rect_background: Rect,
-    button_renderer_mundane: ButtonRenderer<'cx, UiState<'cx>>,
-    button_renderer_primary: ButtonRenderer<'cx, UiState<'cx>>,
-    button_renderer_toxic: ButtonRenderer<'cx, UiState<'cx>>,
+    button_renderer: ButtonRenderer<'cx, UiState<'cx>>,
     button_mundane: Button<'cx, UiState<'cx>>,
     button_primary: Button<'cx, UiState<'cx>>,
     button_toxic: Button<'cx, UiState<'cx>>,
@@ -154,27 +152,8 @@ impl<'cx> UiState<'cx> {
         let counter_text = text_renderer.create_text(&device, "0");
         counter_text.set_parameters(&queue, point2(20., 20.), 24.);
 
-        let button_renderer_mundane = ButtonRenderer::new(
-            text_renderer.clone(),
-            rect_renderer.clone(),
-            event_router,
-            Theme::DEFAULT
-                .button_style_set(ButtonKind::Mundane)
-                .with_line_width(4.)
-                .with_font_size(24.),
-        );
-        let button_renderer_primary = button_renderer_mundane.fork(
-            Theme::DEFAULT
-                .button_style_set(ButtonKind::Primary)
-                .with_line_width(4.)
-                .with_font_size(24.),
-        );
-        let button_renderer_toxic = button_renderer_mundane.fork(
-            Theme::DEFAULT
-                .button_style_set(ButtonKind::Toxic)
-                .with_line_width(4.)
-                .with_font_size(24.),
-        );
+        let button_renderer =
+            ButtonRenderer::new(text_renderer.clone(), rect_renderer.clone(), event_router);
 
         let width = 128.;
         let height = 48.;
@@ -189,9 +168,13 @@ impl<'cx> UiState<'cx> {
             )
         };
         let button_mundane = {
-            button_renderer_mundane.create_button(
+            button_renderer.create_button(
                 &device,
                 bounding_box(0),
+                Theme::DEFAULT
+                    .button_style(ButtonKind::Mundane)
+                    .with_font_size(24.)
+                    .with_line_width(4.),
                 "-1",
                 Some(Box::new(|self_, event| {
                     if event.is_button_trigger() {
@@ -202,9 +185,13 @@ impl<'cx> UiState<'cx> {
             )
         };
         let button_primary = {
-            button_renderer_primary.create_button(
+            button_renderer.create_button(
                 &device,
                 bounding_box(1),
+                Theme::DEFAULT
+                    .button_style(ButtonKind::Primary)
+                    .with_font_size(24.)
+                    .with_line_width(4.),
                 "+1",
                 Some(Box::new(|self_, event| {
                     if event.is_button_trigger() {
@@ -215,9 +202,13 @@ impl<'cx> UiState<'cx> {
             )
         };
         let button_toxic = {
-            button_renderer_primary.create_button(
+            button_renderer.create_button(
                 &device,
                 bounding_box(2),
+                Theme::DEFAULT
+                    .button_style(ButtonKind::Toxic)
+                    .with_font_size(24.)
+                    .with_line_width(4.),
                 "SET 0",
                 Some(Box::new(|self_, event| {
                     if event.is_button_trigger() {
@@ -237,9 +228,7 @@ impl<'cx> UiState<'cx> {
             text_renderer,
             rect_renderer,
             rect_background,
-            button_renderer_mundane,
-            button_renderer_primary,
-            button_renderer_toxic,
+            button_renderer,
             button_mundane,
             button_primary,
             button_toxic,
@@ -285,25 +274,26 @@ impl<'cx> UiState<'cx> {
 
         // Draw text.
         self.counter_text.set_projection(&self.queue, projection);
-        self.text_renderer.draw_text(&mut render_pass, &self.counter_text);
+        self.text_renderer
+            .draw_text(&mut render_pass, &self.counter_text);
 
         // Draw button.
         self.button_mundane.set_projection(&self.queue, projection);
-        self.button_renderer_mundane
+        self.button_renderer
             .prepare_button_for_drawing(&self.queue, &self.button_mundane);
-        self.button_renderer_mundane
+        self.button_renderer
             .draw_button(&mut render_pass, &self.button_mundane);
 
         self.button_primary.set_projection(&self.queue, projection);
-        self.button_renderer_primary
+        self.button_renderer
             .prepare_button_for_drawing(&self.queue, &self.button_primary);
-        self.button_renderer_primary
+        self.button_renderer
             .draw_button(&mut render_pass, &self.button_primary);
 
         self.button_toxic.set_projection(&self.queue, projection);
-        self.button_renderer_toxic
+        self.button_renderer
             .prepare_button_for_drawing(&self.queue, &self.button_toxic);
-        self.button_renderer_toxic
+        self.button_renderer
             .draw_button(&mut render_pass, &self.button_toxic);
 
         drop(render_pass);

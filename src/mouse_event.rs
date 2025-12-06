@@ -36,8 +36,8 @@ impl MouseEvent {
 
     /// Returns true if mouse event:
     ///
-    /// - is left button, and
-    /// - is button up
+    /// - is left button, and ...
+    /// - is button up, and ...
     /// - is inside bounds
     pub fn is_button_trigger(self) -> bool {
         matches!(

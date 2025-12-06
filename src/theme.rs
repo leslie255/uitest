@@ -39,7 +39,7 @@ impl Theme {
         self.foreground[2]
     }
 
-    pub const fn button_style_set(&self, kind: ButtonKind) -> ButtonStyle {
+    pub const fn button_style(&self, kind: ButtonKind) -> ButtonStyle {
         self.button_styles[kind.to_usize()]
     }
 
@@ -77,9 +77,9 @@ impl Theme {
                 pressed_style: ButtonStateStyle {
                     line_width: LineWidth::Uniform(2.),
                     font_size: 12.,
-                    text_color: Srgb::from_hex(0x000000),
-                    fill_color: Srgb::from_hex(0xFFFFFF),
-                    line_color: Srgb::from_hex(0xFFFFFF),
+                    text_color: Srgb::from_hex(0xFFFFFF),
+                    fill_color: Srgb::from_hex(0xA2A2A2),
+                    line_color: Srgb::from_hex(0xA2A2A2),
                 },
             },
             // Primary.
@@ -97,16 +97,16 @@ impl Theme {
                     line_width: LineWidth::Uniform(2.),
                     font_size: 12.,
                     text_color: Srgb::from_hex(0xFFFFFF),
-                    fill_color: Srgb::from_hex(0x3D5B9B),
-                    line_color: Srgb::from_hex(0xE4F0FF),
+                    fill_color: Srgb::from_hex(0x5771B2),
+                    line_color: Srgb::from_hex(0x95A0BD),
                 },
                 // Pressed.
                 pressed_style: ButtonStateStyle {
                     line_width: LineWidth::Uniform(2.),
                     font_size: 12.,
-                    text_color: Srgb::from_hex(0x000000),
-                    fill_color: Srgb::from_hex(0xFFFFFF),
-                    line_color: Srgb::from_hex(0xFFFFFF),
+                    text_color: Srgb::from_hex(0xFFFFFF),
+                    fill_color: Srgb::from_hex(0x95A0BD),
+                    line_color: Srgb::from_hex(0x95A0BD),
                 },
             },
             // Toxic.
@@ -131,9 +131,9 @@ impl Theme {
                 pressed_style: ButtonStateStyle {
                     line_width: LineWidth::Uniform(2.),
                     font_size: 12.,
-                    text_color: Srgb::from_hex(0x952727),
-                    fill_color: Srgb::from_hex(0xFFFFFF),
-                    line_color: Srgb::from_hex(0x952727),
+                    text_color: Srgb::from_hex(0xFFFFFF),
+                    fill_color: Srgb::from_hex(0xFFD0CE),
+                    line_color: Srgb::from_hex(0xFFD0CE),
                 },
             },
         ],

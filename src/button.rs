@@ -1,8 +1,8 @@
 use std::{
     fmt::Debug,
     sync::{
-        Arc, Mutex,
-        atomic::{self, AtomicBool},
+        Arc,
+        atomic::{self, AtomicBool, AtomicU8},
     },
 };
 
@@ -15,12 +15,35 @@ use crate::{
     wgpu_utils::{Srgb, Srgba},
 };
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
 pub enum ButtonState {
+    #[default]
     Idle,
     Hovered,
     Pressed,
+    /// Pressed, but have moved outside.
+    PressedOutside,
+}
+
+#[derive(Debug)]
+pub struct AtomicButtonState(AtomicU8);
+impl AtomicButtonState {
+    pub const fn new(value: ButtonState) -> Self {
+        Self(AtomicU8::new(value as u8))
+    }
+
+    pub fn load(&self, order: atomic::Ordering) -> ButtonState {
+        unsafe { Self::cast_from_repr(self.0.load(order)) }
+    }
+
+    pub fn store(&self, value: ButtonState, order: atomic::Ordering) {
+        self.0.store(value as u8, order)
+    }
+
+    const unsafe fn cast_from_repr(repr: u8) -> ButtonState {
+        unsafe { std::mem::transmute(repr) }
+    }
 }
 
 /// Button style for all `ButtonState`s.
@@ -32,10 +55,11 @@ pub struct ButtonStyle {
 }
 
 impl ButtonStyle {
-    pub const fn style_for(&self, state: ButtonState) -> ButtonStateStyle {
+    pub const fn state_style_for(&self, state: ButtonState) -> ButtonStateStyle {
         match state {
             ButtonState::Idle => self.idle_style,
             ButtonState::Hovered => self.hovered_style,
+            ButtonState::PressedOutside => self.hovered_style,
             ButtonState::Pressed => self.pressed_style,
         }
     }
@@ -90,7 +114,6 @@ pub struct ButtonRenderer<'cx, UiState: 'cx> {
     text_renderer: TextRenderer<'cx>,
     rect_renderer: RectRenderer<'cx>,
     mouse_event_router: Arc<MouseEventRouter<'cx, UiState>>,
-    style: ButtonStyle,
 }
 
 impl<'cx, UiState: 'cx> ButtonRenderer<'cx, UiState> {
@@ -98,23 +121,11 @@ impl<'cx, UiState: 'cx> ButtonRenderer<'cx, UiState> {
         text_renderer: TextRenderer<'cx>,
         rect_renderer: RectRenderer<'cx>,
         mouse_event_router: Arc<MouseEventRouter<'cx, UiState>>,
-        style: ButtonStyle,
     ) -> Self {
         Self {
             text_renderer,
             rect_renderer,
             mouse_event_router,
-            style,
-        }
-    }
-
-    /// Create a new `ButtonRenderer` that has a different `ButtonStyle`.
-    pub fn fork(&self, style: ButtonStyle) -> Self {
-        Self {
-            text_renderer: self.text_renderer.clone(),
-            rect_renderer: self.rect_renderer.clone(),
-            mouse_event_router: self.mouse_event_router.clone(),
-            style,
         }
     }
 
@@ -122,13 +133,14 @@ impl<'cx, UiState: 'cx> ButtonRenderer<'cx, UiState> {
         &self,
         device: &wgpu::Device,
         bounding_box: BoundingBox,
+        style: ButtonStyle,
         title: &str,
         callback: Option<ButtonCallback<'cx, UiState>>,
     ) -> Button<'cx, UiState> {
         let rect = self.rect_renderer.create_rect(device);
         let text = self.text_renderer.create_text(device, title);
         let dispatch = Arc::new(ButtonDispatch {
-            state: Mutex::new(ButtonState::Idle),
+            state: AtomicButtonState::new(ButtonState::Idle),
             needs_updating: true.into(),
             callback,
         });
@@ -142,6 +154,7 @@ impl<'cx, UiState: 'cx> ButtonRenderer<'cx, UiState> {
             text,
             dispatch,
             mouse_listener_handle,
+            style,
         }
     }
 
@@ -149,7 +162,7 @@ impl<'cx, UiState: 'cx> ButtonRenderer<'cx, UiState> {
         let style_needs_updating = button
             .dispatch
             .needs_updating
-            .fetch_and(false, atomic::Ordering::Relaxed);
+            .fetch_and(false, atomic::Ordering::AcqRel);
         if style_needs_updating {
             self.update(queue, button);
         }
@@ -161,16 +174,16 @@ impl<'cx, UiState: 'cx> ButtonRenderer<'cx, UiState> {
     }
 
     fn update(&self, queue: &wgpu::Queue, button: &Button<UiState>) {
-        let style = self.style.style_for(button.get_state());
-        button.rect.set_fill_color(queue, style.fill_color);
-        button.rect.set_line_color(queue, style.line_color);
+        let state_style = button.style.state_style_for(button.state());
+        button.rect.set_fill_color(queue, state_style.fill_color);
+        button.rect.set_line_color(queue, state_style.line_color);
         button
             .rect
-            .set_parameters(queue, button.bounding_box, style.line_width);
-        button.text.set_fg_color(queue, style.text_color);
+            .set_parameters(queue, button.bounding_box, state_style.line_width);
+        button.text.set_fg_color(queue, state_style.text_color);
         button.text.set_bg_color(queue, Srgba::from_hex(0x00000000));
         // Assuming text is single-line.
-        let text_height = style.font_size;
+        let text_height = state_style.font_size;
         let text_width = (button.title_len as f32)
             * self.text_renderer.font().glyph_relative_height()
             * text_height;
@@ -182,7 +195,7 @@ impl<'cx, UiState: 'cx> ButtonRenderer<'cx, UiState> {
         );
         button
             .text
-            .set_parameters(queue, text_origin, style.font_size);
+            .set_parameters(queue, text_origin, state_style.font_size);
     }
 }
 
@@ -196,6 +209,7 @@ pub struct Button<'cx, UiState: 'cx> {
     text: Text,
     dispatch: Arc<ButtonDispatch<'cx, UiState>>,
     mouse_listener_handle: mouse_event::ListenerHandle<'cx, UiState>,
+    style: ButtonStyle,
 }
 
 impl<'cx, UiState> Button<'cx, UiState> {
@@ -208,55 +222,54 @@ impl<'cx, UiState> Button<'cx, UiState> {
         self.bounding_box
     }
 
-    pub fn get_state(&self) -> ButtonState {
-        self.dispatch.get_state()
+    pub fn state(&self) -> ButtonState {
+        self.dispatch.state()
     }
 }
 
 struct ButtonDispatch<'cx, UiState> {
-    state: Mutex<ButtonState>,
+    state: AtomicButtonState,
     /// Flag for when GPU-side things needs updating after something has changed.
     needs_updating: AtomicBool,
     callback: Option<ButtonCallback<'cx, UiState>>,
 }
 
 impl<'cx, UiState> ButtonDispatch<'cx, UiState> {
-    pub fn get_state(&self) -> ButtonState {
-        *self.state.lock().unwrap()
+    pub fn state(&self) -> ButtonState {
+        self.state.load(atomic::Ordering::Acquire)
     }
 
-    /// Returns old state.
-    pub fn set_state(&self, state: ButtonState) -> ButtonState {
-        let mut state_ = self.state.lock().unwrap();
-        *state_ = state;
-        *state_
+    pub fn set_state(&self, state: ButtonState) {
+        self.state.store(state, atomic::Ordering::Release);
     }
 }
 
 impl<'cx, UiState: 'cx> MouseEventListener<'cx, UiState> for Arc<ButtonDispatch<'cx, UiState>> {
     fn mouse_event(&self, event: MouseEvent, ui_state: &mut UiState) {
-        let old_state = self.get_state();
+        let old_state = self.state();
+        use ButtonState::*;
+        use MouseEventKind::*;
         let new_state = match event.kind {
-            MouseEventKind::HoveringStart => Some(ButtonState::Hovered),
-            MouseEventKind::HoveringFinish if old_state == ButtonState::Hovered => {
-                Some(ButtonState::Idle)
-            }
-            MouseEventKind::ButtonDown {
+            HoveringStart if old_state == Idle => Hovered,
+            HoveringStart if old_state == PressedOutside => Pressed,
+            HoveringFinish if old_state == Hovered => Idle,
+            HoveringFinish if old_state == Pressed => PressedOutside,
+            ButtonDown {
                 button: MouseButton::Left,
-            } => Some(ButtonState::Pressed),
-            MouseEventKind::ButtonUp {
+            } => Pressed,
+            ButtonUp {
                 button: MouseButton::Left,
-                inside: _,
-            } => Some(ButtonState::Idle),
-            _ => None,
+                inside: true,
+            } => Hovered,
+            ButtonUp {
+                button: MouseButton::Left,
+                inside: false,
+            } => Idle,
+            _ => old_state,
         };
-        let state_changed = match new_state {
-            Some(new_state) => self.set_state(new_state) == new_state,
-            None => false,
-        };
-        if state_changed {
-            self.needs_updating.store(true, atomic::Ordering::Relaxed);
-        }
+        self.set_state(new_state);
+        self.needs_updating
+            .fetch_or(old_state != new_state, atomic::Ordering::AcqRel);
         if let Some(callback) = self.callback.as_ref() {
             callback(ui_state, event)
         }
