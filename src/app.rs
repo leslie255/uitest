@@ -18,8 +18,8 @@ use crate::{
     theme::{ButtonKind, Theme},
     utils::*,
     view::{
-        ButtonView, ControlFlow, HStackView, RectView, SpreadView, TextView, View, ViewContext,
-        ViewList,
+        ButtonView, ControlFlow, HStackView, RectView, SpreadView, StackLayout, TextView, View,
+        ViewContext, ViewList,
     },
     wgpu_utils::{Canvas as _, CanvasView, Srgb, WindowCanvas},
 };
@@ -242,7 +242,9 @@ impl<'cx> UiState<'cx> {
             window_canvas,
             background_rect_view: the_default::<RectView>()
                 .with_fill_color(Theme::DEFAULT.primary_background()),
-            hstack_view_0: SpreadView::horizontal(Stack0::new(&view_context)),
+            hstack_view_0: SpreadView::horizontal(
+                Stack0::new(&view_context).with_layout(StackLayout::EqualSpacing),
+            ),
             hstack_view_1: SpreadView::horizontal(Stack1::new(&view_context)),
             view_context,
         };

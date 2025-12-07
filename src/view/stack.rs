@@ -9,13 +9,12 @@ use crate::{
 };
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
-pub enum StackAlignment {
+pub enum StackLayout {
     #[default]
-    Center,
-    /// Left for horizontal stacks; up for vertical stacks.
-    Leading,
-    /// Right for horizontal stacks; down for vertical stacks.
-    Trailing,
+    PackCenter,
+    PackLeading,
+    PackTrailing,
+    EqualSpacing,
 }
 
 pub struct HStackView<'cx, Subviews: ViewList<'cx>> {
@@ -23,7 +22,7 @@ pub struct HStackView<'cx, Subviews: ViewList<'cx>> {
     size: RectSize,
     subview_sizes: Vec<RectSize>,
     inter_padding: f32,
-    direction: StackAlignment,
+    layout: StackLayout,
     _marker: PhantomData<&'cx ()>,
 }
 
@@ -34,7 +33,7 @@ impl<'cx, Subviews: ViewList<'cx>> HStackView<'cx, Subviews> {
             size: RectSize::new(0., 0.),
             subview_sizes: Vec::new(),
             inter_padding: 0.0f32,
-            direction: StackAlignment::Center,
+            layout: StackLayout::PackCenter,
             _marker: PhantomData,
         }
     }
@@ -51,11 +50,11 @@ impl<'cx, Subviews: ViewList<'cx>> HStackView<'cx, Subviews> {
 
     param_getters_setters! {
         vis: pub,
-        param_ty: StackAlignment,
-        param: direction,
-        param_mut: direction_mut,
-        set_param: set_direction,
-        with_param: with_direction,
+        param_ty: StackLayout,
+        param: layout,
+        param_mut: layout_mut,
+        set_param: set_layout,
+        with_param: with_layout,
         param_mut_preamble: |_: &mut Self| (),
     }
 
@@ -67,11 +66,23 @@ impl<'cx, Subviews: ViewList<'cx>> HStackView<'cx, Subviews> {
         &mut self.subviews
     }
 
+    fn inter_space(&self, bounds: Bounds) -> f32 {
+        match self.layout {
+            StackLayout::EqualSpacing => {
+                (bounds.width() - self.size.width) / ((self.subview_sizes.len() + 1) as f32)
+            }
+            StackLayout::PackCenter | StackLayout::PackLeading | StackLayout::PackTrailing => {
+                self.inter_padding
+            }
+        }
+    }
+
     fn initial_offset(&self, bounds: Bounds) -> f32 {
-        match self.direction {
-            StackAlignment::Center => bounds.x_min() + 0.5 * (bounds.width() - self.size.width),
-            StackAlignment::Leading => bounds.x_min(),
-            StackAlignment::Trailing => bounds.x_max() - self.size.width,
+        match self.layout {
+            StackLayout::PackCenter => bounds.x_min() + 0.5 * (bounds.width() - self.size.width),
+            StackLayout::PackLeading => bounds.x_min(),
+            StackLayout::PackTrailing => bounds.x_max() - self.size.width,
+            StackLayout::EqualSpacing => self.inter_space(bounds),
         }
     }
 }
@@ -85,19 +96,20 @@ impl<'cx, Subviews: ViewList<'cx>> View<Subviews::UiState> for HStackView<'cx, S
             let subview_size = subview.preferred_size();
             size.height = size.height.max(subview_size.height);
             size.width += subview_size.width;
-            if !is_first {
-                size.width += self.inter_padding;
-            }
             is_first = false;
             self.subview_sizes.push(subview_size);
             ControlFlow::Continue
         });
+        if self.layout != StackLayout::EqualSpacing && self.subview_sizes.len() >= 2 {
+            size.width += self.inter_padding * ((self.subview_sizes.len() - 1) as f32);
+        }
         self.size = size;
         RectSize::new(size.width, size.height)
     }
 
     fn apply_bounds(&mut self, bounds: Bounds) {
         let mut subview_sizes = self.subview_sizes.iter();
+        let inter_space = self.inter_space(bounds);
         let mut offset_counter = self.initial_offset(bounds);
         let mut is_first = true;
         self.subviews.for_each_subview_mut(|subview| {
@@ -114,7 +126,7 @@ impl<'cx, Subviews: ViewList<'cx>> View<Subviews::UiState> for HStackView<'cx, S
             subview.apply_bounds(bounds);
             offset_counter += subview_size.width;
             if !is_first {
-                offset_counter += self.inter_padding;
+                offset_counter += inter_space;
             }
             ControlFlow::Continue
         });
