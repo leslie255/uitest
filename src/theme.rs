@@ -1,5 +1,6 @@
 use crate::{
-    views::{ButtonStateStyle, ButtonStyle, LineWidth},
+    element::LineWidth,
+    view::{ButtonStateStyle, ButtonStyle},
     wgpu_utils::Srgb,
 };
 

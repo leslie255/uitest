@@ -1,7 +1,7 @@
 use std::{
     fmt::{self, Debug},
     sync::{
-        Arc, Mutex, Weak,
+        Arc, Mutex, MutexGuard, Weak,
         atomic::{self, AtomicU64},
     },
 };
@@ -10,7 +10,7 @@ use cgmath::*;
 
 use winit::event::{ElementState, MouseButton, WindowEvent};
 
-use crate::{views::Rect, utils::*};
+use crate::{element::Bounds, utils::*};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MouseEventKind {
@@ -50,7 +50,7 @@ impl MouseEvent {
     }
 }
 
-pub trait MouseEventListener<'cx, UiState: 'cx>: 'cx + Send + Sync {
+pub trait MouseEventListener<UiState>: Send + Sync {
     fn mouse_event(&self, event: MouseEvent, ui_state: &mut UiState);
 }
 
@@ -59,12 +59,12 @@ pub struct MouseEventRouter<'cx, UiState> {
     cursor_position: Mutex<Option<Point2<f32>>>,
     /// Using `u64` as storage for `f64`, as rust doesn't have an `AtomicF64`.
     scale_factor: AtomicU64,
-    bounds: Mutex<Rect>,
-    listeners: Mutex<Vec<Listener<'cx, UiState>>>,
+    bounds: Mutex<Bounds>,
+    listeners: Mutex<Vec<Option<Listener<'cx, UiState>>>>,
 }
 
 impl<'cx, UiState> MouseEventRouter<'cx, UiState> {
-    pub fn new(bounds: Rect) -> Self {
+    pub fn new(bounds: Bounds) -> Self {
         Self {
             cursor_position: Mutex::new(None),
             scale_factor: AtomicU64::new(bytemuck::cast(1.0f64)),
@@ -75,17 +75,17 @@ impl<'cx, UiState> MouseEventRouter<'cx, UiState> {
 
     pub fn register_listener(
         self: &Arc<Self>,
-        bounds: Rect,
-        listener: impl MouseEventListener<'cx, UiState>,
+        bounds: Bounds,
+        listener: impl MouseEventListener<UiState> + 'cx,
     ) -> ListenerHandle<'cx, UiState> {
         let mut listeners = self.listeners.lock().unwrap();
         let index = listeners.len();
-        listeners.push(Listener {
+        listeners.push(Some(Listener {
             bounds,
             is_hovered: false,
             is_pressed: false,
             object: Box::new(listener),
-        });
+        }));
         ListenerHandle {
             router_inner: Arc::downgrade(self),
             index,
@@ -94,7 +94,21 @@ impl<'cx, UiState> MouseEventRouter<'cx, UiState> {
 
     fn unregister_listener(&self, index: usize) {
         let mut listeners = self.listeners.lock().unwrap();
-        listeners.remove(index);
+        listeners[index] = None;
+    }
+
+    fn listeners_iter_mut<'a>(
+        listeners: &'a mut MutexGuard<Vec<Option<Listener<'cx, UiState>>>>,
+    ) -> impl Iterator<Item = &'a mut Listener<'cx, UiState>> + use<'a, 'cx, UiState> {
+        listeners
+            .iter_mut()
+            .filter_map(Option::as_mut)
+    }
+
+    fn listeners_iter<'a>(
+        listeners: &'a MutexGuard<Vec<Option<Listener<'cx, UiState>>>>,
+    ) -> impl Iterator<Item = &'a Listener<'cx, UiState>> + use<'a, 'cx, UiState> {
+        listeners.iter().filter_map(Option::as_ref)
     }
 
     /// Returns if should request redraw.
@@ -116,7 +130,7 @@ impl<'cx, UiState> MouseEventRouter<'cx, UiState> {
                 let cursor_position = point2(position_logical.x, position_logical.y);
                 self.set_cursor_position(Some(cursor_position));
                 let mut listeners = self.listeners.lock().unwrap();
-                for listener in listeners.iter_mut() {
+                for listener in Self::listeners_iter_mut(&mut listeners) {
                     if listener.bounds.contains(cursor_position) && !listener.is_hovered {
                         listener.is_hovered = true;
                         listener.object.mouse_event(
@@ -147,7 +161,7 @@ impl<'cx, UiState> MouseEventRouter<'cx, UiState> {
                     return should_redraw;
                 };
                 let mut listeners = self.listeners.lock().unwrap();
-                for listener in listeners.iter_mut() {
+                for listener in Self::listeners_iter_mut(&mut listeners) {
                     if !listener.bounds.contains(cursor_position) {
                         continue;
                     }
@@ -168,7 +182,7 @@ impl<'cx, UiState> MouseEventRouter<'cx, UiState> {
                     return should_redraw;
                 };
                 let mut listeners = self.listeners.lock().unwrap();
-                for listener in listeners.iter_mut() {
+                for listener in Self::listeners_iter_mut(&mut listeners) {
                     if !listener.is_pressed {
                         continue;
                     }
@@ -189,11 +203,11 @@ impl<'cx, UiState> MouseEventRouter<'cx, UiState> {
         should_redraw
     }
 
-    pub fn set_bounds(&self, bounding_box: Rect) {
+    pub fn set_bounds(&self, bounding_box: Bounds) {
         *self.bounds.lock().unwrap() = bounding_box;
     }
 
-    pub fn get_bounds(&self) -> Rect {
+    pub fn get_bounds(&self) -> Bounds {
         *self.bounds.lock().unwrap()
     }
 
@@ -220,10 +234,10 @@ impl<'cx, UiState> MouseEventRouter<'cx, UiState> {
 }
 
 struct Listener<'cx, UiState> {
-    bounds: Rect,
+    bounds: Bounds,
     is_hovered: bool,
     is_pressed: bool,
-    object: Box<dyn MouseEventListener<'cx, UiState>>,
+    object: Box<dyn MouseEventListener<UiState> + 'cx>,
 }
 
 /// Unregisters the listener when dropped.

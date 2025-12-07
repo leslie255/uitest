@@ -17,7 +17,7 @@ pub fn srgb_to_linear(srgb: f32) -> f32 {
 }
 
 /// Linear RGBA.
-#[derive(Debug, Clone, Copy, PartialEq, Zeroable, Pod)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Zeroable, Pod)]
 #[repr(C)]
 pub struct Rgba {
     pub r: f32,
@@ -81,7 +81,7 @@ impl From<Srgb> for Rgba {
 }
 
 /// sRGB+A.
-#[derive(Debug, Clone, Copy, PartialEq, Zeroable, Pod)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Zeroable, Pod)]
 #[repr(C)]
 pub struct Srgba {
     pub r: f32,
@@ -134,7 +134,7 @@ impl From<Rgba> for Srgba {
 }
 
 /// sRGB.
-#[derive(Debug, Clone, Copy, PartialEq, Zeroable, Pod)]
+#[derive(Default, Debug, Clone, Copy, PartialEq, Zeroable, Pod)]
 #[repr(C)]
 pub struct Srgb {
     pub r: f32,

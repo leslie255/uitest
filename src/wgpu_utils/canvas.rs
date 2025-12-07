@@ -7,7 +7,10 @@ use cgmath::*;
 use derive_more::{Display, Error};
 use winit::{dpi::PhysicalSize, window::Window};
 
-use crate::{views::RectSize, utils::*};
+use crate::{
+    element::{Bounds, RectSize},
+    utils::*,
+};
 
 pub trait Canvas {
     fn format(&self) -> CanvasFormat;
@@ -27,33 +30,33 @@ pub struct CanvasView {
     pub color_texture_view: wgpu::TextureView,
     pub depth_stencil_texture_view: Option<wgpu::TextureView>,
     pub logical_size: RectSize,
+    pub projection: Matrix4<f32>,
 }
 
 impl CanvasView {
-    pub fn projection(&self, space: ProjectionSpace, near: f32, far: f32) -> Matrix4<f32> {
-        let w = self.logical_size.width;
-        let h = self.logical_size.height;
-        let w_half = 0.5 * w;
-        let h_half = 0.5 * h;
-        use ProjectionSpace::*;
-        #[rustfmt::skip]
-        let projection = match space {
-            //                            left     right   bottom   top
-            TopLeftDown  => cgmath::ortho(0.,      w,      h,       0.,      near, far),
-            BottomLeftUp => cgmath::ortho(0.,      w,      0.,      h,       near, far),
-            CenterDown   => cgmath::ortho(-w_half, w_half, h_half,  -h_half, near, far),
-            CenterUp     => cgmath::ortho(-w_half, w_half, -h_half, h_half,  near, far),
-        };
-        projection
+    pub fn new(
+        color_texture_view: wgpu::TextureView,
+        depth_stencil_texture_view: Option<wgpu::TextureView>,
+        logical_size: RectSize,
+    ) -> Self {
+        Self {
+            color_texture_view,
+            depth_stencil_texture_view,
+            logical_size,
+            projection: Self::projection(logical_size, -1.0, 1.0),
+        }
     }
-}
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ProjectionSpace {
-    TopLeftDown,
-    BottomLeftUp,
-    CenterDown,
-    CenterUp,
+    pub fn bounds(&self) -> Bounds {
+        Bounds {
+            origin: point2(0., 0.),
+            size: self.logical_size,
+        }
+    }
+
+    fn projection(logical_size: RectSize, near: f32, far: f32) -> Matrix4<f32> {
+        cgmath::ortho(0., logical_size.width, logical_size.height, 0., near, far)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -90,14 +93,13 @@ impl Canvas for TextureCanvas {
     }
 
     fn begin_drawing(&self) -> Result<CanvasView, Box<dyn Error>> {
-        Ok(CanvasView {
-            color_texture_view: self.color_texture.create_view(&the_default()),
-            depth_stencil_texture_view: self
-                .depth_stencil_texture
+        Ok(CanvasView::new(
+            self.color_texture.create_view(&the_default()),
+            self.depth_stencil_texture
                 .as_ref()
                 .map(|texture| texture.create_view(&the_default())),
-            logical_size: self.logical_size,
-        })
+            self.logical_size,
+        ))
     }
 
     fn finish_drawing(&self) -> Result<(), Box<dyn Error>> {
@@ -241,11 +243,11 @@ impl<'a> Canvas for WindowCanvas<'a> {
             .depth_stencil_texture
             .as_ref()
             .map(|texture| texture.create_view(&the_default()));
-        Ok(CanvasView {
+        Ok(CanvasView::new(
             color_texture_view,
             depth_stencil_texture_view,
-            logical_size: self.logical_size,
-        })
+            self.logical_size,
+        ))
     }
 
     fn finish_drawing(&self) -> Result<(), Box<dyn Error>> {

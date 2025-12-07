@@ -11,8 +11,8 @@ use wgpu::util::DeviceExt;
 
 use crate::{
     AppResources,
+    element::Bounds,
     resources::LoadResourceError,
-    views::Rect,
     utils::*,
     wgpu_utils::{
         AsBindGroup, CanvasFormat, IndexBuffer, Rgba, UniformBuffer, Vertex, VertexBuffer,
@@ -92,11 +92,11 @@ impl<'cx> Font<'cx> {
         glyph_coord.mul_element_wise(self.glyph_size)
     }
 
-    pub fn bounding_box_for_char(&self, char: char) -> Rect {
+    pub fn bounding_box_for_char(&self, char: char) -> Bounds {
         let top_left = self.position_for_glyph(char);
         let atlas_size = vec2(self.atlas_image.width(), self.atlas_image.height());
         let top_left = normalize_coord_in_texture(atlas_size, top_left);
-        Rect::new(
+        Bounds::new(
             top_left.x,
             top_left.y,
             self.glyph_size_normalised.x,
@@ -104,8 +104,8 @@ impl<'cx> Font<'cx> {
         )
     }
 
-    /// Glyph height if glyph_width is 1.
-    pub fn glyph_relative_height(&self) -> f32 {
+    /// Glyph width if glyph height is 1.
+    pub fn glyph_relative_width(&self) -> f32 {
         (self.glyph_size.x as f32) / (self.glyph_size.y as f32)
     }
 
@@ -177,14 +177,14 @@ impl TextInstance {
 }
 
 #[derive(Debug, Clone)]
-pub struct TextView {
+pub struct TextElement {
     bind_group: TextBindGroup,
     wgpu_bind_group: wgpu::BindGroup,
     n_instances: u32,
     instance_buffer: VertexBuffer<TextInstance>,
 }
 
-impl TextView {
+impl TextElement {
     pub fn set_fg_color(&self, queue: &wgpu::Queue, color: impl Into<Rgba>) {
         self.bind_group
             .fg_color
@@ -325,9 +325,9 @@ impl<'cx> TextRenderer<'cx> {
         let glyph_height = glyph_size_pixels.y as f32 / atlas_height as f32;
         let vertices_data = &[
             Vertex2dUV::new([0., 0.], [0., 0.]),
-            Vertex2dUV::new([font.glyph_relative_height(), 0.], [glyph_width, 0.]),
+            Vertex2dUV::new([font.glyph_relative_width(), 0.], [glyph_width, 0.]),
             Vertex2dUV::new(
-                [font.glyph_relative_height(), 1.],
+                [font.glyph_relative_width(), 1.],
                 [glyph_width, glyph_height],
             ),
             Vertex2dUV::new([0., 1.], [0., glyph_height]),
@@ -350,7 +350,7 @@ impl<'cx> TextRenderer<'cx> {
         })
     }
 
-    pub fn draw_text(&self, render_pass: &mut wgpu::RenderPass, text: &TextView) {
+    pub fn draw_text(&self, render_pass: &mut wgpu::RenderPass, text: &TextElement) {
         if text.n_instances == 0 {
             return;
         }
@@ -365,7 +365,7 @@ impl<'cx> TextRenderer<'cx> {
         render_pass.draw_indexed(0..self.index_buffer.length(), 0, 0..text.n_instances);
     }
 
-    pub fn create_text(&self, device: &wgpu::Device, str: &str) -> TextView {
+    pub fn create_text(&self, device: &wgpu::Device, str: &str) -> TextElement {
         let bind_group = TextBindGroup {
             model_view: UniformBuffer::create_init(device, Matrix4::identity().into()),
             projection: UniformBuffer::create_init(device, Matrix4::identity().into()),
@@ -376,7 +376,7 @@ impl<'cx> TextRenderer<'cx> {
         };
         let wgpu_bind_group = bind_group.create_bind_group(&self.bind_group_layout, device);
         let (n_instances, instance_buffer) = self.create_instance_buffer(device, str);
-        TextView {
+        TextElement {
             bind_group,
             wgpu_bind_group,
             n_instances,
@@ -384,7 +384,7 @@ impl<'cx> TextRenderer<'cx> {
         }
     }
 
-    pub fn update_text(&self, device: &wgpu::Device, text: &mut TextView, str: &str) {
+    pub fn update_text(&self, device: &wgpu::Device, text: &mut TextElement, str: &str) {
         (text.n_instances, text.instance_buffer) = self.create_instance_buffer(device, str);
     }
 
@@ -410,7 +410,7 @@ impl<'cx> TextRenderer<'cx> {
             let quad = self.font.bounding_box_for_char(char);
             instances.push(TextInstance {
                 position_offset: [
-                    column as f32 * self.font.glyph_relative_height(),
+                    column as f32 * self.font.glyph_relative_width(),
                     row as f32,
                 ],
                 uv_offset: quad.origin.into(),

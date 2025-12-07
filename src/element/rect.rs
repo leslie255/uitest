@@ -10,12 +10,12 @@ use crate::{
 
 #[derive(Debug, Clone, Copy)]
 #[repr(C)]
-pub struct Rect {
+pub struct Bounds {
     pub origin: Point2<f32>,
     pub size: RectSize,
 }
 
-impl Default for Rect {
+impl Default for Bounds {
     fn default() -> Self {
         Self {
             origin: point2(0., 0.),
@@ -24,7 +24,7 @@ impl Default for Rect {
     }
 }
 
-impl Rect {
+impl Bounds {
     pub const fn new(x_min: f32, y_min: f32, width: f32, height: f32) -> Self {
         Self {
             origin: point2(x_min, y_min),
@@ -48,8 +48,20 @@ impl Rect {
         self.origin.y + self.size.height
     }
 
-    pub const fn end(self) -> Point2<f32> {
+    pub const fn xy_max(self) -> Point2<f32> {
         point2(self.x_max(), self.y_max())
+    }
+
+    pub const fn xy_min(self) -> Point2<f32> {
+        self.origin
+    }
+
+    pub const fn width(self) -> f32 {
+        self.size.width
+    }
+
+    pub const fn height(self) -> f32 {
+        self.size.height
     }
 
     pub const fn contains(self, point: Point2<f32>) -> bool {
@@ -57,6 +69,15 @@ impl Rect {
             && point.x <= self.x_max()
             && self.y_min() <= point.y
             && point.y <= self.y_max()
+    }
+
+    pub const fn with_padding(self, padding: f32) -> Self {
+        Self::new(
+            self.x_min() + padding,
+            self.y_min() + padding,
+            self.width() - padding - padding,
+            self.height() - padding - padding,
+        )
     }
 }
 
@@ -111,6 +132,12 @@ pub enum LineWidth {
         right: f32,
         bottom: f32,
     },
+}
+
+impl Default for LineWidth {
+    fn default() -> Self {
+        Self::Uniform(0.)
+    }
 }
 
 impl LineWidth {
@@ -215,7 +242,7 @@ impl<'cx> RectRenderer<'cx> {
         })
     }
 
-    pub fn create_rect(&self, device: &wgpu::Device) -> RectView {
+    pub fn create_rect(&self, device: &wgpu::Device) -> RectElement {
         let bind_group = RectBindGroup {
             model_view: UniformBuffer::create_init(device, Matrix4::identity().into()),
             projection: UniformBuffer::create_init(device, Matrix4::identity().into()),
@@ -224,13 +251,13 @@ impl<'cx> RectRenderer<'cx> {
             line_width: UniformBuffer::create_init(device, [0., 0., 0., 0.]),
         };
         let wgpu_bind_group = bind_group.create_bind_group(&self.bind_group_layout, device);
-        RectView {
+        RectElement {
             bind_group,
             wgpu_bind_group,
         }
     }
 
-    pub fn draw_rect(&self, render_pass: &mut wgpu::RenderPass, rect: &RectView) {
+    pub fn draw_rect(&self, render_pass: &mut wgpu::RenderPass, rect: &RectElement) {
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_bind_group(0, &rect.wgpu_bind_group, &[]);
         render_pass.draw(0..6, 0..1);
@@ -238,12 +265,12 @@ impl<'cx> RectRenderer<'cx> {
 }
 
 #[derive(Debug, Clone)]
-pub struct RectView {
+pub struct RectElement {
     bind_group: RectBindGroup,
     wgpu_bind_group: wgpu::BindGroup,
 }
 
-impl RectView {
+impl RectElement {
     pub fn set_model_view(&self, queue: &wgpu::Queue, model_view: Matrix4<f32>) {
         self.bind_group.model_view.write(model_view.into(), queue);
     }
@@ -253,18 +280,18 @@ impl RectView {
     }
 
     /// Convenience function over `set_model_view` and `set_normalized_line_width`.
-    /// Sets `model_view` and normalized `line_width` according to the bounding box and line width
+    /// Sets `model_view` and normalized `line_width` according to the bounds and line width
     /// provided.
     pub fn set_parameters(
         &self,
         queue: &wgpu::Queue,
-        bounding_box: Rect,
+        bounds: Bounds,
         line_width: impl Into<LineWidth>,
     ) {
-        let model_view = Matrix4::from_translation(bounding_box.origin.to_vec().extend(0.))
-            * Matrix4::from_nonuniform_scale(bounding_box.size.width, bounding_box.size.height, 1.);
+        let model_view = Matrix4::from_translation(bounds.origin.to_vec().extend(0.))
+            * Matrix4::from_nonuniform_scale(bounds.size.width, bounds.size.height, 1.);
         self.set_model_view(queue, model_view);
-        self.set_normalized_line_width(queue, line_width.into().normalized_in(bounding_box.size));
+        self.set_normalized_line_width(queue, line_width.into().normalized_in(bounds.size));
     }
 
     pub fn set_fill_color(&self, queue: &wgpu::Queue, fill_color: impl Into<Rgba>) {

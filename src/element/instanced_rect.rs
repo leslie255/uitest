@@ -4,7 +4,7 @@ use cgmath::*;
 use crate::{
     AppResources,
     resources::LoadResourceError,
-    views::{Rect, LineWidth},
+    element::{Bounds, LineWidth},
     utils::*,
     wgpu_utils::{AsBindGroup, CanvasFormat, Rgba, UniformBuffer, Vertex, VertexBuffer},
 };
@@ -80,13 +80,13 @@ impl<'cx> InstancedRectRenderer<'cx> {
         &self,
         device: &wgpu::Device,
         instances: &[RectInstance],
-    ) -> InstancedRectsView {
+    ) -> InstancedRectsElement {
         let instance_buffer = VertexBuffer::create_init(device, instances);
         let bind_group = BindGroup {
             projection: UniformBuffer::create_init(device, Matrix4::identity().into()),
         };
         let wgpu_bind_group = bind_group.create_bind_group(&self.bind_group_layout, device);
-        InstancedRectsView {
+        InstancedRectsElement {
             bind_group,
             wgpu_bind_group,
             instance_buffer,
@@ -94,7 +94,7 @@ impl<'cx> InstancedRectRenderer<'cx> {
         }
     }
 
-    pub fn draw_rects(&self, render_pass: &mut wgpu::RenderPass, rects: &InstancedRectsView) {
+    pub fn draw_rects(&self, render_pass: &mut wgpu::RenderPass, rects: &InstancedRectsElement) {
         render_pass.set_pipeline(&self.pipeline);
         render_pass.set_bind_group(0, &rects.wgpu_bind_group, &[]);
         render_pass.set_vertex_buffer(0, rects.instance_buffer.slice(..));
@@ -103,14 +103,14 @@ impl<'cx> InstancedRectRenderer<'cx> {
 }
 
 #[derive(Debug, Clone)]
-pub struct InstancedRectsView {
+pub struct InstancedRectsElement {
     bind_group: BindGroup,
     wgpu_bind_group: wgpu::BindGroup,
     instance_buffer: VertexBuffer<RectInstance>,
     n_instances: u32,
 }
 
-impl InstancedRectsView {
+impl InstancedRectsElement {
     pub fn set_projection(&self, queue: &wgpu::Queue, projection: Matrix4<f32>) {
         self.bind_group.projection.write(projection.into(), queue);
     }
@@ -170,12 +170,12 @@ impl RectInstance {
     }
 
     /// Convenience function over `with_model_view` and `with_normalized_line_width`.
-    /// Sets `model_view` and normalized `line_width` according to the bounding box and line width
+    /// Sets `model_view` and normalized `line_width` according to the bounds and line width
     /// provided.
-    pub fn from_parameters(bounding_box: Rect, line_width: impl Into<LineWidth>) -> Self {
-        let model_view = Matrix3::from_translation(bounding_box.origin.to_vec())
-            * Matrix3::from_nonuniform_scale(bounding_box.size.width, bounding_box.size.height);
-        let line_width_normalized = line_width.into().normalized_in(bounding_box.size);
+    pub fn from_parameters(rect: Bounds, line_width: impl Into<LineWidth>) -> Self {
+        let model_view = Matrix3::from_translation(rect.origin.to_vec())
+            * Matrix3::from_nonuniform_scale(rect.size.width, rect.size.height);
+        let line_width_normalized = line_width.into().normalized_in(rect.size);
         Self::new()
             .with_model_view(model_view)
             .with_normalized_line_width(line_width_normalized)

@@ -1,6 +1,5 @@
 use std::sync::Arc;
 
-use cgmath::*;
 use pollster::FutureExt as _;
 use winit::{
     application::ApplicationHandler,
@@ -10,15 +9,12 @@ use winit::{
 };
 
 use crate::{
+    element::{Bounds, RectSize},
     mouse_event::MouseEventRouter,
     resources::AppResources,
-    theme::{ButtonKind, Theme},
     utils::*,
-    views::{
-        Rect, ButtonRenderer, ButtonView, Font, RectRenderer, RectView, TextRenderer,
-        TextView,
-    },
-    wgpu_utils::{Canvas as _, CanvasView, ProjectionSpace, WindowCanvas},
+    view::{HStack, RectView, TextView, View, ViewContext},
+    wgpu_utils::{Canvas as _, CanvasView, Srgb, WindowCanvas},
 };
 
 pub(crate) struct Application<'cx> {
@@ -32,7 +28,7 @@ impl<'cx> Application<'cx> {
     pub fn new(resources: &'cx AppResources) -> Self {
         Self {
             resources,
-            mouse_event_router: Arc::new(MouseEventRouter::new(Rect::default())),
+            mouse_event_router: Arc::new(MouseEventRouter::new(Bounds::default())),
             window: None,
             ui: None,
         }
@@ -72,7 +68,7 @@ impl<'cx> ApplicationHandler for Application<'cx> {
         }
         if let WindowEvent::Resized(size_physical) = event {
             let size_logical = size_physical.to_logical::<f32>(window.scale_factor());
-            let bounds = Rect::new(0., 0., size_logical.width, size_logical.height);
+            let bounds = Bounds::new(0., 0., size_logical.width, size_logical.height);
             self.mouse_event_router.set_bounds(bounds);
         }
         if let Some(ui) = self.ui.as_mut() {
@@ -105,15 +101,9 @@ struct UiState<'cx> {
     queue: wgpu::Queue,
     window: Arc<Window>,
     window_canvas: WindowCanvas<'static>,
-    text_renderer: TextRenderer<'cx>,
-    rect_renderer: RectRenderer<'cx>,
-    rect_background: RectView,
-    button_renderer: ButtonRenderer<'cx, UiState<'cx>>,
-    button_mundane: ButtonView<'cx, UiState<'cx>>,
-    button_primary: ButtonView<'cx, UiState<'cx>>,
-    button_toxic: ButtonView<'cx, UiState<'cx>>,
-    counter: i64,
-    counter_text: TextView,
+    view_context: ViewContext<'cx, Self>,
+    rect_views: Vec<RectView>,
+    text_view: TextView,
 }
 
 impl<'cx> UiState<'cx> {
@@ -139,88 +129,29 @@ impl<'cx> UiState<'cx> {
                 present_mode: wgpu::PresentMode::AutoVsync,
             },
         );
-        let canvas_format = window_canvas.format();
 
-        let rect_renderer = RectRenderer::create(&device, resources, canvas_format).unwrap();
+        let view_context = ViewContext::create(
+            &device,
+            &queue,
+            resources,
+            window_canvas.format(),
+            event_router,
+        )
+        .unwrap_or_else(|e| panic!("{e}"));
 
-        let rect_background = rect_renderer.create_rect(&device);
-        rect_background.set_fill_color(&queue, Theme::DEFAULT.primary_background());
-        rect_background.set_parameters(&queue, Rect::new(-1., -1., 2., 2.), 0.);
+        let colors = [0x008080, 0x404080];
+        let rect_views: Vec<RectView> = Vec::from_iter(colors.map(|color| {
+            RectView::new(RectSize::new(120., 120.))
+                .with_fill_color(Srgb::from_hex(color))
+                .with_line_color(Srgb::from_hex(0xFFFFFF))
+                .with_line_width(4.)
+        }));
 
-        let font = Font::load_from_path(resources, "fonts/big_blue_terminal.json").unwrap();
-        let text_renderer =
-            TextRenderer::create(&device, &queue, font, resources, canvas_format).unwrap();
-
-        let text_size = 96.;
-        let counter_text = text_renderer.create_text(&device, "0");
-        counter_text.set_parameters(&queue, point2(20., 20.), text_size);
-
-        let button_renderer =
-            ButtonRenderer::new(text_renderer.clone(), rect_renderer.clone(), event_router);
-
-        let width = 128.;
-        let height = 48.;
-        let inter_padding = 10.;
-        let y_offset = 20. + text_size + inter_padding;
-        let bounding_box = |i: usize| -> Rect {
-            Rect::new(
-                20. + (i as f32) * (width + inter_padding),
-                y_offset,
-                width,
-                height,
-            )
-        };
-        let button_mundane = {
-            button_renderer.create_button(
-                &device,
-                bounding_box(0),
-                Theme::DEFAULT
-                    .button_style(ButtonKind::Mundane)
-                    .with_font_size(24.)
-                    .with_line_width(4.),
-                "-1",
-                Some(Box::new(|self_, event| {
-                    if event.is_button_trigger() {
-                        self_.counter -= 1;
-                        self_.update_counter_text();
-                    }
-                })),
-            )
-        };
-        let button_primary = {
-            button_renderer.create_button(
-                &device,
-                bounding_box(1),
-                Theme::DEFAULT
-                    .button_style(ButtonKind::Primary)
-                    .with_font_size(24.)
-                    .with_line_width(4.),
-                "+1",
-                Some(Box::new(|self_, event| {
-                    if event.is_button_trigger() {
-                        self_.counter += 1;
-                        self_.update_counter_text();
-                    }
-                })),
-            )
-        };
-        let button_toxic = {
-            button_renderer.create_button(
-                &device,
-                bounding_box(2),
-                Theme::DEFAULT
-                    .button_style(ButtonKind::Toxic)
-                    .with_font_size(24.)
-                    .with_line_width(4.),
-                "SET 0",
-                Some(Box::new(|self_, event| {
-                    if event.is_button_trigger() {
-                        self_.counter = 0;
-                        self_.update_counter_text();
-                    }
-                })),
-            )
-        };
+        let mut text_view = TextView::new(&view_context)
+            .with_font_size(24.)
+            .with_bg_color(Srgb::from_hex(0x00FFFF))
+            .with_fg_color(Srgb::from_hex(0x808080));
+        text_view.set_text(String::from("Hello, World"));
 
         let mut self_ = Self {
             resources,
@@ -228,26 +159,12 @@ impl<'cx> UiState<'cx> {
             queue,
             window,
             window_canvas,
-            text_renderer,
-            rect_renderer,
-            rect_background,
-            button_renderer,
-            button_mundane,
-            button_primary,
-            button_toxic,
-            counter: 0,
-            counter_text,
+            view_context,
+            rect_views,
+            text_view,
         };
         self_.window_resized();
         self_
-    }
-
-    pub fn update_counter_text(&mut self) {
-        self.text_renderer.update_text(
-            &self.device,
-            &mut self.counter_text,
-            &format!("{}", self.counter),
-        );
     }
 
     fn frame(&mut self, canvas: CanvasView) {
@@ -269,35 +186,17 @@ impl<'cx> UiState<'cx> {
             ..the_default()
         });
 
-        let projection = canvas.projection(ProjectionSpace::TopLeftDown, -1.0, 1.0);
-
-        // Draw background rect.
-        self.rect_renderer
-            .draw_rect(&mut render_pass, &self.rect_background);
-
-        // Draw text.
-        self.counter_text.set_projection(&self.queue, projection);
-        self.text_renderer
-            .draw_text(&mut render_pass, &self.counter_text);
-
-        // Draw button.
-        self.button_mundane.set_projection(&self.queue, projection);
-        self.button_renderer
-            .prepare_button_for_drawing(&self.queue, &self.button_mundane);
-        self.button_renderer
-            .draw_button(&mut render_pass, &self.button_mundane);
-
-        self.button_primary.set_projection(&self.queue, projection);
-        self.button_renderer
-            .prepare_button_for_drawing(&self.queue, &self.button_primary);
-        self.button_renderer
-            .draw_button(&mut render_pass, &self.button_primary);
-
-        self.button_toxic.set_projection(&self.queue, projection);
-        self.button_renderer
-            .prepare_button_for_drawing(&self.queue, &self.button_toxic);
-        self.button_renderer
-            .draw_button(&mut render_pass, &self.button_toxic);
+        let mut hstack = HStack::default();
+        let hstack_view = hstack.add_subviews(|subviews| {
+            for rect_view in &mut self.rect_views {
+                subviews.add(rect_view);
+            }
+            subviews.add(&mut self.text_view);
+        });
+        hstack_view.finish();
+        hstack_view.set_bounds(canvas.bounds().with_padding(20.));
+        hstack_view.prepare_for_drawing(&self.view_context, &self.device, &self.queue, &canvas);
+        hstack_view.draw(&self.view_context, &mut render_pass);
 
         drop(render_pass);
 
