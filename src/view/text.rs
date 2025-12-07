@@ -75,6 +75,8 @@ impl TextView {
         self.text_needs_update = true;
         self.n_lines = 1usize;
         let mut n_columns = 0usize;
+        self.n_columns = 0;
+        self.n_lines = 1;
         for char in text.chars() {
             match char {
                 '\n' => {
@@ -121,7 +123,7 @@ impl<UiState> View<UiState> for TextView {
         self.size()
     }
 
-    fn set_bounds(&mut self, bounds: Bounds) {
+    fn apply_bounds(&mut self, bounds: Bounds) {
         self.set_bounds_(bounds);
     }
 

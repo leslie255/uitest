@@ -1,14 +1,16 @@
 use std::{
+    array,
     fmt::{self, Debug},
+    iter,
     sync::{
         Arc, Mutex, MutexGuard, Weak,
-        atomic::{self, AtomicU64},
+        atomic::{self, AtomicBool, AtomicU64},
     },
 };
 
 use cgmath::*;
 
-use winit::event::{ElementState, MouseButton, WindowEvent};
+use winit::event::{MouseButton, WindowEvent};
 
 use crate::{element::Bounds, utils::*};
 
@@ -16,8 +18,17 @@ use crate::{element::Bounds, utils::*};
 pub enum MouseEventKind {
     HoveringStart,
     HoveringFinish,
-    ButtonDown { button: MouseButton },
-    ButtonUp { button: MouseButton, inside: bool },
+    ButtonDown {
+        button: MouseButton,
+        /// `true` if the button is pressed when the cursor is inside the bounds.
+        /// `false` if the button is pressed when the cursor is outside the bounds, and is only moved
+        /// into the bounds now.
+        started_inside: bool,
+    },
+    ButtonUp {
+        button: MouseButton,
+        inside: bool,
+    },
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -33,21 +44,6 @@ impl MouseEvent {
             cursor_position,
         }
     }
-
-    /// Returns true if mouse event:
-    ///
-    /// - is left button, and ...
-    /// - is button up, and ...
-    /// - is inside bounds
-    pub fn is_button_trigger(self) -> bool {
-        matches!(
-            self.kind,
-            MouseEventKind::ButtonUp {
-                button: MouseButton::Left,
-                inside: true
-            }
-        )
-    }
 }
 
 pub trait MouseEventListener<UiState>: Send + Sync {
@@ -61,6 +57,13 @@ pub struct MouseEventRouter<'cx, UiState> {
     scale_factor: AtomicU64,
     bounds: Mutex<Bounds>,
     listeners: Mutex<Vec<Option<Listener<'cx, UiState>>>>,
+    /// Flag for when at least one of the listeners have changed their bounds, indicating that
+    /// something in the frame has changed. In this case, we should scan for hovering changes even
+    /// if cursor hasn't moved.
+    bounds_changed: AtomicBool,
+    /// Track states of mouse buttons.
+    /// `true` for pressed state.
+    button_states: Mutex<[bool; 5]>,
 }
 
 impl<'cx, UiState> MouseEventRouter<'cx, UiState> {
@@ -70,6 +73,8 @@ impl<'cx, UiState> MouseEventRouter<'cx, UiState> {
             scale_factor: AtomicU64::new(bytemuck::cast(1.0f64)),
             bounds: Mutex::new(bounds),
             listeners: the_default(),
+            bounds_changed: AtomicBool::new(false),
+            button_states: Mutex::new(array::from_fn(|_| false)),
         }
     }
 
@@ -83,7 +88,7 @@ impl<'cx, UiState> MouseEventRouter<'cx, UiState> {
         listeners.push(Some(Listener {
             bounds,
             is_hovered: false,
-            is_pressed: false,
+            button_states: array::from_fn(|_| false),
             object: Box::new(listener),
         }));
         ListenerHandle {
@@ -100,14 +105,13 @@ impl<'cx, UiState> MouseEventRouter<'cx, UiState> {
     fn update_bounds(&self, index: usize, bounds: Bounds) {
         let mut listeners = self.listeners.lock().unwrap();
         listeners[index].as_mut().unwrap().bounds = bounds;
+        self.bounds_changed.store(true, atomic::Ordering::Release);
     }
 
     fn listeners_iter_mut<'a>(
         listeners: &'a mut MutexGuard<Vec<Option<Listener<'cx, UiState>>>>,
     ) -> impl Iterator<Item = &'a mut Listener<'cx, UiState>> + use<'a, 'cx, UiState> {
-        listeners
-            .iter_mut()
-            .filter_map(Option::as_mut)
+        listeners.iter_mut().filter_map(Option::as_mut)
     }
 
     fn listeners_iter<'a>(
@@ -118,7 +122,6 @@ impl<'cx, UiState> MouseEventRouter<'cx, UiState> {
 
     /// Returns if should request redraw.
     pub fn window_event(&self, event: &WindowEvent, ui_state: &mut UiState) -> bool {
-        let mut should_redraw = false;
         _ = ui_state;
         match event {
             WindowEvent::ScaleFactorChanged {
@@ -126,6 +129,7 @@ impl<'cx, UiState> MouseEventRouter<'cx, UiState> {
                 inner_size_writer: _,
             } => {
                 self.set_scale_factor(*scale_factor);
+                self.scan_events(ui_state)
             }
             WindowEvent::CursorMoved {
                 device_id: _,
@@ -134,76 +138,111 @@ impl<'cx, UiState> MouseEventRouter<'cx, UiState> {
                 let position_logical = position.to_logical::<f32>(self.get_scale_factor());
                 let cursor_position = point2(position_logical.x, position_logical.y);
                 self.set_cursor_position(Some(cursor_position));
-                let mut listeners = self.listeners.lock().unwrap();
-                for listener in Self::listeners_iter_mut(&mut listeners) {
-                    if listener.bounds.contains(cursor_position) && !listener.is_hovered {
-                        listener.is_hovered = true;
-                        listener.object.mouse_event(
-                            MouseEvent::new(MouseEventKind::HoveringStart, cursor_position),
-                            ui_state,
-                        );
-                        should_redraw = true;
-                    }
-                    if !listener.bounds.contains(cursor_position) && listener.is_hovered {
-                        listener.is_hovered = false;
-                        listener.object.mouse_event(
-                            MouseEvent::new(MouseEventKind::HoveringFinish, cursor_position),
-                            ui_state,
-                        );
-                        should_redraw = true;
-                    }
-                }
+                self.scan_events(ui_state)
             }
             WindowEvent::CursorLeft { device_id: _ } => {
                 self.set_cursor_position(None);
+                self.scan_events(ui_state)
             }
             &WindowEvent::MouseInput {
                 device_id: _,
-                state: ElementState::Pressed,
+                state,
                 button,
             } => {
-                let Some(cursor_position) = self.get_cursor_position() else {
-                    return should_redraw;
+                let index = match button {
+                    MouseButton::Left => 0,
+                    MouseButton::Right => 1,
+                    MouseButton::Middle => 2,
+                    MouseButton::Back => 3,
+                    MouseButton::Forward => 4,
+                    MouseButton::Other(_) => return false,
                 };
-                let mut listeners = self.listeners.lock().unwrap();
-                for listener in Self::listeners_iter_mut(&mut listeners) {
-                    if !listener.bounds.contains(cursor_position) {
-                        continue;
-                    }
-                    listener.is_pressed = true;
-                    listener.object.mouse_event(
-                        MouseEvent::new(MouseEventKind::ButtonDown { button }, cursor_position),
-                        ui_state,
+                let mut button_states = self.button_states.lock().unwrap();
+                button_states[index] = state.is_pressed();
+                drop(button_states);
+                self.scan_events(ui_state)
+            }
+            WindowEvent::RedrawRequested => {
+                let bounds_changed = self
+                    .bounds_changed
+                    .fetch_and(false, atomic::Ordering::AcqRel);
+                if !bounds_changed {
+                    return false;
+                }
+                self.scan_events(ui_state)
+            }
+            _ => false,
+        }
+    }
+
+    /// Returns if should redraw.
+    fn scan_events(&self, ui_state: &mut UiState) -> bool {
+        let Some(cursor_position) = self.get_cursor_position() else {
+            return false;
+        };
+        let mut listeners_locked = self.listeners.lock().unwrap();
+        let mut should_redraw = false;
+        let button_states = self.button_states.lock().unwrap();
+        // Scan for button hovering events.
+        for listener in Self::listeners_iter_mut(&mut listeners_locked) {
+            let inside = listener.bounds.contains(cursor_position);
+            let is_hovered_before = listener.is_hovered;
+            // Scan for hovering changes.
+            if inside && !listener.is_hovered {
+                // Hovering start.
+                listener.is_hovered = true;
+                listener.object.mouse_event(
+                    MouseEvent::new(MouseEventKind::HoveringStart, cursor_position),
+                    ui_state,
+                );
+                should_redraw = true;
+            } else if !inside && listener.is_hovered {
+                // Hovering finish.
+                listener.is_hovered = false;
+                listener.object.mouse_event(
+                    MouseEvent::new(MouseEventKind::HoveringFinish, cursor_position),
+                    ui_state,
+                );
+                should_redraw = true;
+            }
+            // Scan for button up/down events.
+            // Sanity check in case of future refractors.
+            debug_assert!(listener.button_states.len() == button_states.len());
+            for (i, (state, listener_state)) in
+                iter::zip(button_states.into_iter(), &mut listener.button_states).enumerate()
+            {
+                let button = match i {
+                    0 => MouseButton::Left,
+                    1 => MouseButton::Right,
+                    2 => MouseButton::Middle,
+                    3 => MouseButton::Forward,
+                    4 => MouseButton::Back,
+                    _ => unreachable!(),
+                };
+                if !state && *listener_state {
+                    // Button up event.
+                    *listener_state = state;
+                    let event = MouseEvent::new(
+                        MouseEventKind::ButtonUp { button, inside },
+                        cursor_position,
                     );
+                    listener.object.mouse_event(event, ui_state);
+                    should_redraw = true;
+                } else if state && !*listener_state && inside {
+                    // Button down event.
+                    *listener_state = state;
+                    let started_inside = is_hovered_before;
+                    let event = MouseEvent::new(
+                        MouseEventKind::ButtonDown {
+                            button,
+                            started_inside,
+                        },
+                        cursor_position,
+                    );
+                    listener.object.mouse_event(event, ui_state);
                     should_redraw = true;
                 }
             }
-            &WindowEvent::MouseInput {
-                device_id: _,
-                state: ElementState::Released,
-                button,
-            } => {
-                let Some(cursor_position) = self.get_cursor_position() else {
-                    return should_redraw;
-                };
-                let mut listeners = self.listeners.lock().unwrap();
-                for listener in Self::listeners_iter_mut(&mut listeners) {
-                    if !listener.is_pressed {
-                        continue;
-                    }
-                    let inside = listener.bounds.contains(cursor_position);
-                    listener.is_pressed = false;
-                    listener.object.mouse_event(
-                        MouseEvent::new(
-                            MouseEventKind::ButtonUp { button, inside },
-                            cursor_position,
-                        ),
-                        ui_state,
-                    );
-                    should_redraw = true;
-                }
-            }
-            _ => (),
         }
         should_redraw
     }
@@ -239,9 +278,13 @@ impl<'cx, UiState> MouseEventRouter<'cx, UiState> {
 }
 
 struct Listener<'cx, UiState> {
+    /// The bounds of this listener.
     bounds: Bounds,
+    /// Is the cursor currently hovering over this listener?
     is_hovered: bool,
-    is_pressed: bool,
+    /// Records the buttons that the listener is currently being pressed by.
+    button_states: [bool; 5],
+    /// The listener object type erased and boxed.
     object: Box<dyn MouseEventListener<UiState> + 'cx>,
 }
 
@@ -270,19 +313,16 @@ impl<UiState> Debug for ListenerHandle<'_, UiState> {
 
 impl<UiState> Drop for ListenerHandle<'_, UiState> {
     fn drop(&mut self) {
-        let Some(router) = self.router.upgrade() else {
-            return;
+        if let Some(router) = self.router.upgrade() {
+            router.unregister_listener(self.index);
         };
-        router.unregister_listener(self.index);
     }
 }
 
 impl<'cx, UiState> ListenerHandle<'cx, UiState> {
     pub fn update_bounds(&self, bounds: Bounds) {
-        let Some(router) = self.router.upgrade() else {
-            return;
+        if let Some(router) = self.router.upgrade() {
+            router.update_bounds(self.index, bounds);
         };
-        router.update_bounds(self.index, bounds);
     }
 }
-

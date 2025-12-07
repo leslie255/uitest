@@ -1,3 +1,5 @@
+use cgmath::*;
+
 use crate::{
     element::{Bounds, LineWidth, RectElement, RectSize},
     param_getters_setters,
@@ -41,7 +43,7 @@ impl RectView {
             line_color: Rgba::from_hex(0xFFFFFF),
             line_width: LineWidth::Uniform(0.),
             size,
-            bounds: Bounds::new(0., 0., size.width, size.height),
+            bounds: Bounds::new(point2(0., 0.), size),
             needs_update: true,
             raw: None,
         }
@@ -99,10 +101,10 @@ impl RectView {
 
 impl<UiState> View<UiState> for RectView {
     fn preferred_size(&self) -> RectSize {
-        self.bounds.size
+        self.size
     }
 
-    fn set_bounds(&mut self, bounds: Bounds) {
+    fn apply_bounds(&mut self, bounds: Bounds) {
         self.set_bounds_(bounds);
     }
 

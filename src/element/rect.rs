@@ -1,3 +1,5 @@
+use std::fmt::{self, Debug};
+
 use bytemuck::{Pod, Zeroable};
 use cgmath::*;
 use derive_more::From;
@@ -8,11 +10,22 @@ use crate::{
     wgpu_utils::{AsBindGroup, CanvasFormat, Rgba, UniformBuffer},
 };
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy)]
 #[repr(C)]
 pub struct Bounds {
     pub origin: Point2<f32>,
     pub size: RectSize,
+}
+
+impl Debug for Bounds {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("Bounds")
+            .field("x_min", &self.x_min())
+            .field("x_max", &self.x_max())
+            .field("width", &self.width())
+            .field("height", &self.height())
+            .finish()
+    }
 }
 
 impl Default for Bounds {
@@ -25,7 +38,11 @@ impl Default for Bounds {
 }
 
 impl Bounds {
-    pub const fn new(x_min: f32, y_min: f32, width: f32, height: f32) -> Self {
+    pub const fn new(origin: Point2<f32>, size: RectSize) -> Self {
+        Self { origin, size }
+    }
+
+    pub const fn from_scalars(x_min: f32, y_min: f32, width: f32, height: f32) -> Self {
         Self {
             origin: point2(x_min, y_min),
             size: RectSize::new(width, height),
@@ -72,12 +89,20 @@ impl Bounds {
     }
 
     pub const fn with_padding(self, padding: f32) -> Self {
-        Self::new(
+        Self::from_scalars(
             self.x_min() + padding,
             self.y_min() + padding,
             self.width() - padding - padding,
             self.height() - padding - padding,
         )
+    }
+
+    pub const fn with_origin(self, origin: Point2<f32>) -> Self {
+        Self { origin, ..self }
+    }
+
+    pub const fn with_size(self, size: RectSize) -> Self {
+        Self { size, ..self }
     }
 }
 
@@ -161,6 +186,46 @@ impl LineWidth {
             right: right / size.width,
             bottom: bottom / size.height,
         }
+    }
+
+    pub const fn set_left(&mut self, left_width: f32) {
+        let [_, top, right, bottom] = self.to_array();
+        *self = Self::PerBorder {
+            left: left_width,
+            top,
+            right,
+            bottom,
+        };
+    }
+
+    pub const fn set_top(&mut self, top_width: f32) {
+        let [left, _, right, bottom] = self.to_array();
+        *self = Self::PerBorder {
+            left,
+            top: top_width,
+            right,
+            bottom,
+        };
+    }
+
+    pub const fn set_right(&mut self, right_width: f32) {
+        let [left, top, _, bottom] = self.to_array();
+        *self = Self::PerBorder {
+            left,
+            top,
+            right: right_width,
+            bottom,
+        };
+    }
+
+    pub const fn set_bottom(&mut self, bottom_width: f32) {
+        let [left, top, right, _] = self.to_array();
+        *self = Self::PerBorder {
+            left,
+            top,
+            right,
+            bottom: bottom_width,
+        };
     }
 }
 

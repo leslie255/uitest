@@ -96,7 +96,7 @@ impl<'cx> Font<'cx> {
         let top_left = self.position_for_glyph(char);
         let atlas_size = vec2(self.atlas_image.width(), self.atlas_image.height());
         let top_left = normalize_coord_in_texture(atlas_size, top_left);
-        Bounds::new(
+        Bounds::from_scalars(
             top_left.x,
             top_left.y,
             self.glyph_size_normalised.x,

@@ -10,10 +10,9 @@ use cgmath::*;
 use winit::event::MouseButton;
 
 use crate::{
-    element::{Bounds, LineWidth, RectElement, RectRenderer, RectSize, TextElement, TextRenderer},
-    mouse_event::{self, MouseEvent, MouseEventKind, MouseEventListener, MouseEventRouter},
-    param_getters_setters,
-    view::{RectView, TextView, View, ViewContext, text},
+    element::{Bounds, LineWidth, RectSize},
+    mouse_event::{self, MouseEvent, MouseEventKind, MouseEventListener},
+    view::{RectView, TextView, View, ViewContext},
     wgpu_utils::{Srgb, Srgba},
 };
 
@@ -89,7 +88,7 @@ pub struct ButtonStateStyle {
 }
 
 pub type ButtonCallback<'cx, UiState> =
-    Box<dyn for<'a> Fn(&'a mut UiState, MouseEvent) + Send + Sync + 'cx>;
+    Box<dyn for<'a> Fn(&'a mut UiState, ButtonEvent) + Send + Sync + 'cx>;
 
 pub struct ButtonView<'cx, UiState: 'cx> {
     rect_view: RectView,
@@ -112,10 +111,9 @@ impl<'cx, UiState> ButtonView<'cx, UiState> {
             state_updated: AtomicBool::new(true),
             callback,
         });
-        let listener_handle = view_context.mouse_event_router().register_listener(
-            Bounds::new(0., 0., default_size.width, default_size.height),
-            dispatch.clone(),
-        );
+        let listener_handle = view_context
+            .mouse_event_router()
+            .register_listener(Bounds::new(point2(0., 0.), default_size), dispatch.clone());
         let mut self_ = Self {
             rect_view: RectView::new(default_size),
             text_view: TextView::new(view_context),
@@ -194,7 +192,7 @@ impl<'cx, UiState: 'cx> View<UiState> for ButtonView<'cx, UiState> {
         self.size()
     }
 
-    fn set_bounds(&mut self, bounds: Bounds) {
+    fn apply_bounds(&mut self, bounds: Bounds) {
         // Assuming text is single-line.
         self.rect_view.set_bounds_(bounds);
         self.relayout_text();
@@ -255,6 +253,7 @@ impl<'cx, UiState> MouseEventListener<UiState> for Arc<ButtonDispatch<'cx, UiSta
             HoveringFinish if old_state == Pressed => PressedOutside,
             ButtonDown {
                 button: MouseButton::Left,
+                started_inside: true,
             } => Pressed,
             ButtonUp {
                 button: MouseButton::Left,
@@ -269,7 +268,39 @@ impl<'cx, UiState> MouseEventListener<UiState> for Arc<ButtonDispatch<'cx, UiSta
         self.state.store(new_state, atomic::Ordering::Release);
         self.state_updated.store(true, atomic::Ordering::Release);
         if let Some(callback) = self.callback.as_ref() {
-            callback(ui_state, event)
+            let button_event = ButtonEvent {
+                kind: event.kind,
+                position: event.cursor_position,
+                previous_state: old_state,
+                current_state: new_state,
+            };
+            callback(ui_state, button_event);
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct ButtonEvent {
+    pub kind: MouseEventKind,
+    pub position: Point2<f32>,
+    pub previous_state: ButtonState,
+    pub current_state: ButtonState,
+}
+
+impl ButtonEvent {
+    /// Returns true if button event satisfy all of the following:
+    ///
+    /// - is button up
+    /// - is left button
+    /// - is inside bounds
+    /// - previous state is pressed (so a dragged click starting from
+    ///   outside the button and finishing inside does not count)
+    pub fn is_button_trigger(self) -> bool {
+        self.kind
+            == MouseEventKind::ButtonUp {
+                button: MouseButton::Left,
+                inside: true,
+            }
+            && self.previous_state == ButtonState::Pressed
     }
 }

@@ -1,10 +1,12 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::SystemTime};
 
+use cgmath::*;
 use pollster::FutureExt as _;
 use winit::{
     application::ApplicationHandler,
     event::WindowEvent,
     event_loop::ActiveEventLoop,
+    keyboard::{Key, NamedKey},
     window::{Window, WindowAttributes, WindowId},
 };
 
@@ -69,7 +71,7 @@ impl<'cx> ApplicationHandler for Application<'cx> {
         }
         if let WindowEvent::Resized(size_physical) = event {
             let size_logical = size_physical.to_logical::<f32>(window.scale_factor());
-            let bounds = Bounds::new(0., 0., size_logical.width, size_logical.height);
+            let bounds = Bounds::from_scalars(0., 0., size_logical.width, size_logical.height);
             self.mouse_event_router.set_bounds(bounds);
         }
         if let Some(ui) = self.ui.as_mut() {
@@ -103,10 +105,13 @@ struct UiState<'cx> {
     window: Arc<Window>,
     window_canvas: WindowCanvas<'static>,
     view_context: ViewContext<'cx, Self>,
+    background_rect_view: RectView,
     rect_views: Vec<RectView>,
     text_view: TextView,
-    button_view: ButtonView<'cx, Self>,
-    hstack: HStack,
+    button_view_0: ButtonView<'cx, Self>,
+    button_view_1: ButtonView<'cx, Self>,
+    hstack_0: HStack<'cx, Self>,
+    hstack_1: HStack<'cx, Self>,
 }
 
 impl<'cx> UiState<'cx> {
@@ -142,32 +147,63 @@ impl<'cx> UiState<'cx> {
         )
         .unwrap_or_else(|e| panic!("{e}"));
 
-        let colors = [0x008080, 0x404080];
-        let rect_views: Vec<RectView> = Vec::from_iter(colors.map(|color| {
-            RectView::new(RectSize::new(120., 120.))
-                .with_fill_color(Srgb::from_hex(color))
-                .with_line_color(Srgb::from_hex(0xFFFFFF))
-                .with_line_width(4.)
-        }));
+        let colors = [0x008080, 0x404080, 0x2040A0];
+        let line_width = 2.;
+        let rect_views: Vec<RectView> =
+            Vec::from_iter(colors.into_iter().enumerate().map(|(i, color)| {
+                let mut rect_view = RectView::new(RectSize::new(64., 64.))
+                    .with_fill_color(Srgb::from_hex(color))
+                    .with_line_color(Srgb::from_hex(0xFFFFFF))
+                    .with_line_width(line_width);
+                let is_last = i + 1 == colors.len();
+                let is_first = i == 0;
+                if is_first {
+                    rect_view.size_mut().width -= 1.;
+                    rect_view.line_width_mut().set_right(0.5 * line_width);
+                } else if is_last {
+                    rect_view.size_mut().width -= 1.;
+                    rect_view.line_width_mut().set_left(0.5 * line_width);
+                }
+                rect_view
+            }));
 
         let mut text_view = TextView::new(&view_context)
             .with_font_size(24.)
-            .with_bg_color(Srgb::from_hex(0x00FFFF))
-            .with_fg_color(Srgb::from_hex(0x808080));
-        text_view.set_text(String::from("Hello, World"));
+            .with_bg_color(Srgb::from_hex(0x308050))
+            .with_fg_color(Srgb::from_hex(0xFFFFFF));
+        text_view.set_text(String::from("Hello, World!"));
 
-        let mut button_view = ButtonView::new(
+        let mut button_view_0 = ButtonView::new(
+            &view_context,
+            Theme::DEFAULT
+                .button_style(ButtonKind::Primary)
+                .with_font_size(24.)
+                .with_line_width(4.),
+            Some(Box::new(|_self, event| {
+                log::debug!("event received from button: {event:?}");
+                if event.is_button_trigger() {
+                    log::debug!("TRIGGERED!");
+                }
+            })),
+        )
+        .with_size(RectSize::new(128., 48.));
+        button_view_0.set_title(String::from("Button"));
+
+        let mut button_view_1 = ButtonView::new(
             &view_context,
             Theme::DEFAULT
                 .button_style(ButtonKind::Mundane)
                 .with_font_size(24.)
                 .with_line_width(4.),
             Some(Box::new(|_self, event| {
-                log::debug!("event received from button: {event:?}")
+                log::debug!("event received from button: {event:?}");
+                if event.is_button_trigger() {
+                    log::debug!("TRIGGERED!");
+                }
             })),
         )
         .with_size(RectSize::new(128., 48.));
-        button_view.set_title(String::from("Button"));
+        button_view_1.set_title(String::from("Button"));
 
         let mut self_ = Self {
             resources,
@@ -176,10 +212,14 @@ impl<'cx> UiState<'cx> {
             window,
             window_canvas,
             view_context,
+            background_rect_view: the_default::<RectView>()
+                .with_fill_color(Theme::DEFAULT.primary_background()),
             rect_views,
             text_view,
-            button_view,
-            hstack: the_default(),
+            button_view_0,
+            button_view_1,
+            hstack_0: the_default(),
+            hstack_1: the_default(),
         };
         self_.window_resized();
         self_
@@ -204,17 +244,67 @@ impl<'cx> UiState<'cx> {
             ..the_default()
         });
 
-        let hstack_view = self.hstack.add_subviews(|subviews| {
-            for rect_view in &mut self.rect_views {
-                subviews.add(rect_view);
+        let seconds = SystemTime::UNIX_EPOCH.elapsed().unwrap().as_secs_f64();
+        let wave = ((f64::sin(seconds * std::f64::consts::TAU / 4.) + 1.) * 0.5) as f32;
+
+        let button_view_1 = &mut self.button_view_1;
+        let mut hstack_view_1 = {
+            let mut builder = self.hstack_1.build();
+            let mut string = String::with_capacity((12. * wave).round() as usize);
+            for _ in 0..string.capacity() {
+                string.push('A');
             }
-            subviews.add(&mut self.text_view);
-            subviews.add(&mut self.button_view);
-        });
-        hstack_view.finish();
-        hstack_view.set_bounds(canvas.bounds().with_padding(20.));
-        hstack_view.prepare_for_drawing(&self.view_context, &self.device, &self.queue, &canvas);
-        hstack_view.draw(&self.view_context, &mut render_pass);
+            self.text_view.set_text(string);
+            builder.subview(&mut self.text_view);
+            builder.subview(button_view_1);
+            builder.finish()
+        };
+
+        let mut hstack_view_0 = {
+            let mut builder = self.hstack_0.build();
+            for rect_view in &mut self.rect_views {
+                rect_view.size_mut().width = 64. * wave;
+                builder.subview(rect_view);
+            }
+            builder.subview(&mut self.button_view_0);
+            builder.finish()
+        };
+
+        let padding = 10.;
+
+        let hstack_view_0_bounds = self.view_context.prepare_view(
+            &self.device,
+            &self.queue,
+            &canvas,
+            point2(2. * padding, 2. * padding),
+            &mut hstack_view_0,
+        );
+
+        self.view_context.prepare_view_bounded(
+            &self.device,
+            &self.queue,
+            &canvas,
+            canvas.bounds(),
+            &mut self.background_rect_view,
+        );
+
+        self.view_context.prepare_view(
+            &self.device,
+            &self.queue,
+            &canvas,
+            point2(
+                hstack_view_0_bounds.x_min(),
+                hstack_view_0_bounds.y_max() + padding,
+            ),
+            &mut hstack_view_1,
+        );
+
+        self.view_context
+            .draw_view(&mut render_pass, &self.background_rect_view);
+        self.view_context
+            .draw_view(&mut render_pass, &hstack_view_0);
+        self.view_context
+            .draw_view(&mut render_pass, &hstack_view_1);
 
         drop(render_pass);
 
@@ -234,8 +324,18 @@ impl<'cx> UiState<'cx> {
                 self.frame(canvas_view);
                 self.window.pre_present_notify();
                 self.window_canvas.finish_drawing().unwrap();
+                self.window.request_redraw();
             }
             WindowEvent::CloseRequested => event_loop.exit(),
+            WindowEvent::KeyboardInput {
+                device_id: _,
+                event,
+                is_synthetic: _,
+            } if event.state.is_pressed() => {
+                if event.logical_key == Key::Named(NamedKey::F5) {
+                    self.window.request_redraw();
+                }
+            }
             _ => (),
         }
     }
