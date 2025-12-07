@@ -53,10 +53,9 @@ impl<UiState> View<UiState> for SpacerView {
 pub enum SpreadAxis {
     Horizontal,
     Vertical,
-    Both,
 }
 
-/// Makes the view take as much space as possible in one, or both, axis.
+/// Makes the view take as much space as possible in one axis.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, AsRef, AsMut, Deref, DerefMut)]
 pub struct SpreadView<Subview> {
     axis: SpreadAxis,
@@ -72,14 +71,10 @@ where
     Subview: View<UiState>,
 {
     fn preferred_size(&mut self) -> RectSize {
+        let subview_size = self.subview.preferred_size();
         match self.axis {
-            SpreadAxis::Horizontal => {
-                RectSize::new(f32::INFINITY, self.subview.preferred_size().height)
-            }
-            SpreadAxis::Vertical => {
-                RectSize::new(self.subview.preferred_size().width, f32::INFINITY)
-            }
-            SpreadAxis::Both => RectSize::new(f32::INFINITY, f32::INFINITY),
+            SpreadAxis::Horizontal => RectSize::new(f32::INFINITY, subview_size.height),
+            SpreadAxis::Vertical => RectSize::new(subview_size.width, f32::INFINITY),
         }
     }
 
@@ -117,10 +112,6 @@ impl<Subview> SpreadView<Subview> {
 
     pub fn vertical(subview: Subview) -> Self {
         Self::new(SpreadAxis::Vertical, subview)
-    }
-
-    pub fn both(subview: Subview) -> Self {
-        Self::new(SpreadAxis::Both, subview)
     }
 
     param_getters_setters! {

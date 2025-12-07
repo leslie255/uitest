@@ -18,8 +18,8 @@ use crate::{
     theme::{ButtonKind, Theme},
     utils::*,
     view::{
-        ButtonView, ControlFlow, HStackView, RectView, SpreadView, StackLayout, TextView, View,
-        ViewContext, ViewList,
+        ButtonView, ControlFlow, HStackView, RectView, SpreadView, StackLayout, TextView,
+        VStackView, View, ViewContext, ViewList,
     },
     wgpu_utils::{Canvas as _, CanvasView, Srgb, WindowCanvas},
 };
@@ -102,11 +102,11 @@ fn init_wgpu() -> (wgpu::Instance, wgpu::Adapter, wgpu::Device, wgpu::Queue) {
     (instance, adapter, device, queue)
 }
 
-struct Stack0<'cx> {
+struct HStack0<'cx> {
     rect_views: Vec<RectView>,
     button_view: ButtonView<'cx, UiState<'cx>>,
 }
-impl<'cx> ViewList<'cx> for Stack0<'cx> {
+impl<'cx> ViewList<'cx> for HStack0<'cx> {
     type UiState = UiState<'cx>;
     impl_view_list! {
         'cx,
@@ -115,7 +115,7 @@ impl<'cx> ViewList<'cx> for Stack0<'cx> {
     }
 }
 
-impl<'cx> Stack0<'cx> {
+impl<'cx> HStack0<'cx> {
     pub fn new(view_context: &ViewContext<'cx, UiState<'cx>>) -> HStackView<'cx, Self> {
         let colors = [0x008080, 0x404080, 0xB04020];
         let line_width = 2.;
@@ -149,11 +149,11 @@ impl<'cx> Stack0<'cx> {
     }
 }
 
-struct Stack1<'cx> {
+struct HStack1<'cx> {
     button_view: ButtonView<'cx, UiState<'cx>>,
     text_view: TextView,
 }
-impl<'cx> ViewList<'cx> for Stack1<'cx> {
+impl<'cx> ViewList<'cx> for HStack1<'cx> {
     type UiState = UiState<'cx>;
     impl_view_list! {
         'cx,
@@ -162,7 +162,7 @@ impl<'cx> ViewList<'cx> for Stack1<'cx> {
     }
 }
 
-impl<'cx> Stack1<'cx> {
+impl<'cx> HStack1<'cx> {
     pub fn new(view_context: &ViewContext<'cx, UiState<'cx>>) -> HStackView<'cx, Self> {
         HStackView::new(Self {
             text_view: TextView::new(view_context)
@@ -189,6 +189,29 @@ impl<'cx> Stack1<'cx> {
     }
 }
 
+struct Stack<'cx> {
+    hstack_view_0: SpreadView<HStackView<'cx, HStack0<'cx>>>,
+    hstack_view_1: SpreadView<HStackView<'cx, HStack1<'cx>>>,
+}
+impl<'cx> ViewList<'cx> for Stack<'cx> {
+    type UiState = UiState<'cx>;
+    impl_view_list! {
+        'cx,
+        hstack_view_0,
+        hstack_view_1,
+    }
+}
+
+impl<'cx> Stack<'cx> {
+    pub fn new(view_context: &ViewContext<'cx, UiState<'cx>>) -> VStackView<'cx, Self> {
+        VStackView::new(Self {
+            hstack_view_0: SpreadView::horizontal(HStack0::new(view_context)),
+            hstack_view_1: SpreadView::horizontal(HStack1::new(view_context)),
+        })
+        .with_layout(StackLayout::EqualSpacing)
+    }
+}
+
 struct UiState<'cx> {
     resources: &'cx AppResources,
     device: wgpu::Device,
@@ -197,8 +220,7 @@ struct UiState<'cx> {
     window_canvas: WindowCanvas<'static>,
     view_context: ViewContext<'cx, Self>,
     background_rect_view: RectView,
-    hstack_view_0: SpreadView<HStackView<'cx, Stack0<'cx>>>,
-    hstack_view_1: SpreadView<HStackView<'cx, Stack1<'cx>>>,
+    stack: SpreadView<VStackView<'cx, Stack<'cx>>>,
 }
 
 impl<'cx> UiState<'cx> {
@@ -242,10 +264,7 @@ impl<'cx> UiState<'cx> {
             window_canvas,
             background_rect_view: the_default::<RectView>()
                 .with_fill_color(Theme::DEFAULT.primary_background()),
-            hstack_view_0: SpreadView::horizontal(
-                Stack0::new(&view_context).with_layout(StackLayout::EqualSpacing),
-            ),
-            hstack_view_1: SpreadView::horizontal(Stack1::new(&view_context)),
+            stack: SpreadView::vertical(Stack::new(&view_context)),
             view_context,
         };
         self_.window_resized();
@@ -274,12 +293,23 @@ impl<'cx> UiState<'cx> {
         let seconds = SystemTime::UNIX_EPOCH.elapsed().unwrap().as_secs_f64();
         let wave = ((f64::sin(seconds * std::f64::consts::TAU / 4.) + 1.) * 0.5) as f32;
 
-        for rect_view in &mut self.hstack_view_0.subviews_mut().rect_views {
+        for rect_view in &mut self
+            .stack
+            .subviews_mut()
+            .hstack_view_0
+            .subviews_mut()
+            .rect_views
+        {
             let min_width = rect_view.line_width().left() + rect_view.line_width().right();
             rect_view.size_mut().width = (64. - min_width) * wave + min_width;
         }
 
-        let text_view = &mut self.hstack_view_1.subviews_mut().text_view;
+        let text_view = &mut self
+            .stack
+            .subviews_mut()
+            .hstack_view_1
+            .subviews_mut()
+            .text_view;
         text_view.set_text({
             let wave_u = (wave * 12.).round() as usize;
             let mut string = String::with_capacity(wave_u);
@@ -289,8 +319,6 @@ impl<'cx> UiState<'cx> {
             string
         });
 
-        let padding = 10.;
-
         self.view_context.prepare_view_bounded(
             &self.device,
             &self.queue,
@@ -299,28 +327,18 @@ impl<'cx> UiState<'cx> {
             &mut self.background_rect_view,
         );
 
-        let hstack_view_0_bounds = self.view_context.prepare_view(
-            &self.device,
-            &self.queue,
-            &canvas,
-            point2(20., 20.),
-            &mut self.hstack_view_0,
-        );
-
         self.view_context.prepare_view(
             &self.device,
             &self.queue,
             &canvas,
-            point2(0., hstack_view_0_bounds.y_max() + padding),
-            &mut self.hstack_view_1,
+            point2(0., 0.),
+            &mut self.stack,
         );
 
         self.view_context
             .draw_view(&mut render_pass, &self.background_rect_view);
-        self.view_context
-            .draw_view(&mut render_pass, &self.hstack_view_0);
-        self.view_context
-            .draw_view(&mut render_pass, &self.hstack_view_1);
+
+        self.view_context.draw_view(&mut render_pass, &self.stack);
 
         drop(render_pass);
 
