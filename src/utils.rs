@@ -1,4 +1,4 @@
-use std::{error::Error, mem::transmute};
+use std::{error::Error, mem::transmute, sync::atomic::{self, AtomicBool}};
 
 pub(crate) type DynError = Box<dyn Error>;
 pub(crate) type DynResult<T> = Result<T, DynError>;
@@ -43,4 +43,18 @@ macro_rules! param_getters_setters {
             self
         }
     };
+}
+
+pub trait AtomicBoolExt {
+    fn fetch_set(&self, value: bool, order: atomic::Ordering) -> bool;
+}
+
+impl AtomicBoolExt for AtomicBool {
+    #[inline(always)]
+    fn fetch_set(&self, value: bool, order: atomic::Ordering) -> bool {
+        match value {
+            true => self.fetch_or(true, order),
+            false => self.fetch_and(false, order),
+        }
+    }
 }

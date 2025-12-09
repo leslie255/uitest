@@ -3,25 +3,25 @@ use derive_more::{AsMut, AsRef, Deref, DerefMut};
 use crate::{
     element::{Bounds, RectSize},
     param_getters_setters,
-    view::View,
+    view::View, wgpu_utils::CanvasView,
 };
 
-use super::ViewContext;
+use super::UiContext;
 
 /// An empty view for just leaving a bit of space empty.
 #[derive(Default, Debug, Clone, Copy, PartialEq)]
 pub struct SpacerView {
-    size: RectSize,
+    size: RectSize<f32>,
 }
 
 impl SpacerView {
-    pub const fn new(size: RectSize) -> Self {
+    pub const fn new(size: RectSize<f32>) -> Self {
         Self { size }
     }
 
     param_getters_setters! {
         vis: pub,
-        param_ty: RectSize,
+        param_ty: RectSize<f32>,
         param: size,
         param_mut: size_mut,
         set_param: set_size,
@@ -30,23 +30,23 @@ impl SpacerView {
     }
 }
 
-impl<UiState> View<UiState> for SpacerView {
-    fn preferred_size(&mut self) -> RectSize {
+impl<UiState> View<'_, UiState> for SpacerView {
+    fn preferred_size(&mut self) -> RectSize<f32> {
         self.size
     }
 
-    fn apply_bounds(&mut self, _bounds: Bounds) {}
+    fn apply_bounds(&mut self, _bounds: Bounds<f32>) {}
 
     fn prepare_for_drawing(
         &mut self,
-        _view_context: &ViewContext<UiState>,
+        _view_context: &UiContext<UiState>,
         _device: &wgpu::Device,
         _queue: &wgpu::Queue,
-        _canvas: &crate::wgpu_utils::CanvasView,
+        _canvas: &CanvasView,
     ) {
     }
 
-    fn draw(&self, _view_context: &ViewContext<UiState>, _render_pass: &mut wgpu::RenderPass) {}
+    fn draw(&self, _view_context: &UiContext<UiState>, _render_pass: &mut wgpu::RenderPass) {}
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -66,11 +66,11 @@ pub struct SpreadView<Subview> {
     subview: Subview,
 }
 
-impl<UiState, Subview> View<UiState> for SpreadView<Subview>
+impl<'cx, UiState, Subview> View<'cx, UiState> for SpreadView<Subview>
 where
-    Subview: View<UiState>,
+    Subview: View<'cx, UiState>,
 {
-    fn preferred_size(&mut self) -> RectSize {
+    fn preferred_size(&mut self) -> RectSize<f32> {
         let subview_size = self.subview.preferred_size();
         match self.axis {
             SpreadAxis::Horizontal => RectSize::new(f32::INFINITY, subview_size.height),
@@ -78,23 +78,23 @@ where
         }
     }
 
-    fn apply_bounds(&mut self, bounds: Bounds) {
+    fn apply_bounds(&mut self, bounds: Bounds<f32>) {
         self.subview.apply_bounds(bounds)
     }
 
     fn prepare_for_drawing(
         &mut self,
-        view_context: &ViewContext<UiState>,
+        ui_context: &UiContext<'cx, UiState>,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        canvas: &crate::wgpu_utils::CanvasView,
+        canvas: &CanvasView,
     ) {
         self.subview
-            .prepare_for_drawing(view_context, device, queue, canvas)
+            .prepare_for_drawing(ui_context, device, queue, canvas)
     }
 
-    fn draw(&self, view_context: &ViewContext<UiState>, render_pass: &mut wgpu::RenderPass) {
-        self.subview.draw(view_context, render_pass)
+    fn draw(&self, ui_context: &UiContext<'cx, UiState>, render_pass: &mut wgpu::RenderPass) {
+        self.subview.draw(ui_context, render_pass)
     }
 }
 

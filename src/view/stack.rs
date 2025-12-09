@@ -5,7 +5,7 @@ use cgmath::*;
 use crate::{
     element::{Bounds, RectSize},
     param_getters_setters,
-    view::{ControlFlow, View, ViewContext, ViewList},
+    view::{ControlFlow, UiContext, View, ViewList}, wgpu_utils::CanvasView,
 };
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
@@ -19,8 +19,8 @@ pub enum StackLayout {
 
 pub struct HStackView<'cx, Subviews: ViewList<'cx>> {
     subviews: Subviews,
-    size: RectSize,
-    subview_sizes: Vec<RectSize>,
+    size: RectSize<f32>,
+    subview_sizes: Vec<RectSize<f32>>,
     inter_padding: f32,
     layout: StackLayout,
     _marker: PhantomData<&'cx ()>,
@@ -66,7 +66,7 @@ impl<'cx, Subviews: ViewList<'cx>> HStackView<'cx, Subviews> {
         &mut self.subviews
     }
 
-    fn inter_space(&self, bounds: Bounds) -> f32 {
+    fn inter_space(&self, bounds: Bounds<f32>) -> f32 {
         match self.layout {
             StackLayout::EqualSpacing => {
                 (bounds.width() - self.size.width) / ((self.subview_sizes.len() + 1) as f32)
@@ -77,7 +77,7 @@ impl<'cx, Subviews: ViewList<'cx>> HStackView<'cx, Subviews> {
         }
     }
 
-    fn initial_offset(&self, bounds: Bounds) -> f32 {
+    fn initial_offset(&self, bounds: Bounds<f32>) -> f32 {
         match self.layout {
             StackLayout::PackCenter => bounds.x_min() + 0.5 * (bounds.width() - self.size.width),
             StackLayout::PackLeading => bounds.x_min(),
@@ -87,9 +87,9 @@ impl<'cx, Subviews: ViewList<'cx>> HStackView<'cx, Subviews> {
     }
 }
 
-impl<'cx, Subviews: ViewList<'cx>> View<Subviews::UiState> for HStackView<'cx, Subviews> {
-    fn preferred_size(&mut self) -> RectSize {
-        let mut size = RectSize::new(0., 0.);
+impl<'cx, Subviews: ViewList<'cx>> View<'cx, Subviews::UiState> for HStackView<'cx, Subviews> {
+    fn preferred_size(&mut self) -> RectSize<f32> {
+        let mut size = RectSize::new(0.0f32, 0.);
         self.subview_sizes.clear();
         self.subviews.for_each_subview_mut(|subview| {
             let subview_size = subview.preferred_size();
@@ -105,7 +105,7 @@ impl<'cx, Subviews: ViewList<'cx>> View<Subviews::UiState> for HStackView<'cx, S
         RectSize::new(size.width, size.height)
     }
 
-    fn apply_bounds(&mut self, bounds: Bounds) {
+    fn apply_bounds(&mut self, bounds: Bounds<f32>) {
         let mut subview_sizes = self.subview_sizes.iter();
         let inter_space = self.inter_space(bounds);
         let mut offset_counter = self.initial_offset(bounds);
@@ -134,26 +134,26 @@ impl<'cx, Subviews: ViewList<'cx>> View<Subviews::UiState> for HStackView<'cx, S
         });
     }
 
-    fn prepare_for_drawing(
+    fn prepare_for_drawing<'a>(
         &mut self,
-        view_context: &ViewContext<Subviews::UiState>,
+        ui_context: &'a UiContext<'cx, Subviews::UiState>,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        canvas: &crate::wgpu_utils::CanvasView,
+        canvas: &CanvasView,
     ) {
         self.subviews.for_each_subview_mut(|subview| {
-            subview.prepare_for_drawing(view_context, device, queue, canvas);
+            subview.prepare_for_drawing(ui_context, device, queue, canvas);
             ControlFlow::Continue
         });
     }
 
     fn draw(
         &self,
-        view_context: &ViewContext<Subviews::UiState>,
+        ui_context: &UiContext<'cx, Subviews::UiState>,
         render_pass: &mut wgpu::RenderPass,
     ) {
         self.subviews.for_each_subview(|subview| {
-            subview.draw(view_context, render_pass);
+            subview.draw(ui_context, render_pass);
             ControlFlow::Continue
         });
     }
@@ -161,8 +161,8 @@ impl<'cx, Subviews: ViewList<'cx>> View<Subviews::UiState> for HStackView<'cx, S
 
 pub struct VStackView<'cx, Subviews: ViewList<'cx>> {
     subviews: Subviews,
-    size: RectSize,
-    subview_sizes: Vec<RectSize>,
+    size: RectSize<f32>,
+    subview_sizes: Vec<RectSize<f32>>,
     inter_padding: f32,
     layout: StackLayout,
     _marker: PhantomData<&'cx ()>,
@@ -208,7 +208,7 @@ impl<'cx, Subviews: ViewList<'cx>> VStackView<'cx, Subviews> {
         &mut self.subviews
     }
 
-    fn inter_space(&self, bounds: Bounds) -> f32 {
+    fn inter_space(&self, bounds: Bounds<f32>) -> f32 {
         match self.layout {
             StackLayout::EqualSpacing => {
                 (bounds.height() - self.size.height) / ((self.subview_sizes.len() + 1) as f32)
@@ -219,7 +219,7 @@ impl<'cx, Subviews: ViewList<'cx>> VStackView<'cx, Subviews> {
         }
     }
 
-    fn initial_offset(&self, bounds: Bounds) -> f32 {
+    fn initial_offset(&self, bounds: Bounds<f32>) -> f32 {
         match self.layout {
             StackLayout::PackCenter => bounds.y_min() + 0.5 * (bounds.height() - self.size.height),
             StackLayout::PackLeading => bounds.y_min(),
@@ -229,9 +229,9 @@ impl<'cx, Subviews: ViewList<'cx>> VStackView<'cx, Subviews> {
     }
 }
 
-impl<'cx, Subviews: ViewList<'cx>> View<Subviews::UiState> for VStackView<'cx, Subviews> {
-    fn preferred_size(&mut self) -> RectSize {
-        let mut size = RectSize::new(0., 0.);
+impl<'cx, Subviews: ViewList<'cx>> View<'cx, Subviews::UiState> for VStackView<'cx, Subviews> {
+    fn preferred_size(&mut self) -> RectSize<f32> {
+        let mut size = RectSize::new(0.0f32, 0.);
         self.subview_sizes.clear();
         self.subviews.for_each_subview_mut(|subview| {
             let subview_size = subview.preferred_size();
@@ -247,7 +247,7 @@ impl<'cx, Subviews: ViewList<'cx>> View<Subviews::UiState> for VStackView<'cx, S
         RectSize::new(size.width, size.height)
     }
 
-    fn apply_bounds(&mut self, bounds: Bounds) {
+    fn apply_bounds(&mut self, bounds: Bounds<f32>) {
         let mut subview_sizes = self.subview_sizes.iter();
         let inter_space = self.inter_space(bounds);
         let mut offset_counter = self.initial_offset(bounds);
@@ -278,24 +278,24 @@ impl<'cx, Subviews: ViewList<'cx>> View<Subviews::UiState> for VStackView<'cx, S
 
     fn prepare_for_drawing(
         &mut self,
-        view_context: &ViewContext<Subviews::UiState>,
+        ui_context: &UiContext<'cx, Subviews::UiState>,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        canvas: &crate::wgpu_utils::CanvasView,
+        canvas: &CanvasView,
     ) {
         self.subviews.for_each_subview_mut(|subview| {
-            subview.prepare_for_drawing(view_context, device, queue, canvas);
+            subview.prepare_for_drawing(ui_context, device, queue, canvas);
             ControlFlow::Continue
         });
     }
 
     fn draw(
         &self,
-        view_context: &ViewContext<Subviews::UiState>,
+        ui_context: &UiContext<'cx, Subviews::UiState>,
         render_pass: &mut wgpu::RenderPass,
     ) {
         self.subviews.for_each_subview(|subview| {
-            subview.draw(view_context, render_pass);
+            subview.draw(ui_context, render_pass);
             ControlFlow::Continue
         });
     }

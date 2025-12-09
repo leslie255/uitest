@@ -18,8 +18,8 @@ use crate::{
     theme::{ButtonKind, Theme},
     utils::*,
     view::{
-        ButtonView, ControlFlow, HStackView, ImageView, RectView, SpreadView, StackLayout,
-        TextView, VStackView, View, ViewContext, ViewList, view_lists::*,
+        ButtonEvent, ButtonView, HStackView, ImageView, RectView, SpreadView,
+        StackLayout, TextView, UiContext, VStackView, ViewList, view_lists::*,
     },
     wgpu_utils::{Canvas as _, CanvasView, Srgb, Srgba, WindowCanvas},
 };
@@ -116,7 +116,7 @@ impl<'cx> ViewList<'cx> for HStack0<'cx> {
 }
 
 impl<'cx> HStack0<'cx> {
-    pub fn new(view_context: &ViewContext<'cx, UiState<'cx>>) -> HStackView<'cx, Self> {
+    pub fn new(ui_context: &UiContext<'cx, UiState<'cx>>) -> HStackView<'cx, Self> {
         let colors = [0x008080, 0x404080, 0xB04020];
         let line_width = 2.;
         HStackView::new(Self {
@@ -130,22 +130,11 @@ impl<'cx> HStack0<'cx> {
                 })
                 .collect(),
             button_view: {
-                let mut button_view = ButtonView::new(
-                    view_context,
-                    Theme::DEFAULT
-                        .button_style(ButtonKind::Primary)
-                        .with_font_size(24.)
-                        .with_line_width(4.),
-                    Some(Box::new(|ui_state, event| {
-                        if event.is_button_trigger() {
-                            ui_state.counter += 1;
-                            ui_state.update_counter_text();
-                        }
-                    })),
-                )
-                .with_size(RectSize::new(128., 48.));
-                button_view.set_title(String::from("+1"));
-                button_view
+                ButtonView::new(ui_context)
+                    .with_callback(UiState::button_callback_increment)
+                    .with_style(Theme::DEFAULT.button_style(ButtonKind::Primary).scaled(2.))
+                    .with_size(RectSize::new(128., 48.))
+                    .with_title(String::from("+1"))
             },
         })
         .with_inter_padding(10.)
@@ -155,7 +144,7 @@ impl<'cx> HStack0<'cx> {
 struct HStack2<'cx> {
     image_view: ImageView,
     button_view: ButtonView<'cx, UiState<'cx>>,
-    text_view: TextView,
+    text_view: TextView<'cx>,
 }
 impl<'cx> ViewList<'cx> for HStack2<'cx> {
     type UiState = UiState<'cx>;
@@ -169,30 +158,19 @@ impl<'cx> ViewList<'cx> for HStack2<'cx> {
 
 impl<'cx> HStack2<'cx> {
     pub fn new(
-        view_context: &ViewContext<'cx, UiState<'cx>>,
+        ui_context: &UiContext<'cx, UiState<'cx>>,
         texture: Texture2d,
     ) -> HStackView<'cx, Self> {
         HStackView::new(Self {
-            image_view: ImageView::new(texture).with_size(RectSize::new(28., 28.)),
+            image_view: ImageView::new_with_texture(texture).with_size(RectSize::new(28., 28.)),
             button_view: {
-                let mut button_view = ButtonView::new(
-                    view_context,
-                    Theme::DEFAULT
-                        .button_style(ButtonKind::Mundane)
-                        .with_font_size(24.)
-                        .with_line_width(4.),
-                    Some(Box::new(|ui_state, event| {
-                        if event.is_button_trigger() {
-                            ui_state.counter -= 1;
-                            ui_state.update_counter_text();
-                        }
-                    })),
-                )
-                .with_size(RectSize::new(128., 48.));
-                button_view.set_title(String::from("-1"));
-                button_view
+                ButtonView::new(ui_context)
+                    .with_callback(UiState::button_callback_decrement)
+                    .with_style(Theme::DEFAULT.button_style(ButtonKind::Mundane).scaled(2.))
+                    .with_size(RectSize::new(128., 48.))
+                    .with_title(String::from("-1"))
             },
-            text_view: TextView::new(view_context)
+            text_view: TextView::new(ui_context)
                 .with_font_size(48.)
                 .with_fg_color(Srgb::from_hex(0xFFFFFF))
                 .with_bg_color(Srgb::from_hex(0x308050)),
@@ -207,7 +185,7 @@ struct UiState<'cx> {
     queue: wgpu::Queue,
     window: Arc<Window>,
     window_canvas: WindowCanvas<'static>,
-    view_context: ViewContext<'cx, Self>,
+    ui_context: UiContext<'cx, Self>,
     background_rect_view: RectView,
     counter: i64,
     #[allow(clippy::type_complexity)]
@@ -217,7 +195,7 @@ struct UiState<'cx> {
             ViewList3<
                 Self,
                 SpreadView<HStackView<'cx, HStack0<'cx>>>,
-                SpreadView<HStackView<'cx, ViewList1<Self, TextView>>>,
+                SpreadView<HStackView<'cx, ViewList1<Self, TextView<'cx>>>>,
                 SpreadView<HStackView<'cx, HStack2<'cx>>>,
             >,
         >,
@@ -231,24 +209,10 @@ impl<'cx> UiState<'cx> {
         event_router: Arc<MouseEventRouter<'cx, Self>>,
     ) -> Self {
         let (instance, adapter, device, queue) = init_wgpu();
-        let window_canvas = WindowCanvas::create_for_window(
-            &instance,
-            &adapter,
-            &device,
-            window.clone(),
-            |color_format| wgpu::SurfaceConfiguration {
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
-                format: color_format,
-                view_formats: vec![color_format],
-                alpha_mode: wgpu::CompositeAlphaMode::Auto,
-                width: window.inner_size().width,
-                height: window.inner_size().height,
-                desired_maximum_frame_latency: 3,
-                present_mode: wgpu::PresentMode::AutoVsync,
-            },
-        );
+        let window_canvas =
+            WindowCanvas::create_for_window(&instance, &adapter, &device, window.clone());
 
-        let view_context = ViewContext::create(
+        let ui_context = UiContext::create(
             &device,
             &queue,
             resources,
@@ -277,22 +241,36 @@ impl<'cx> UiState<'cx> {
             counter: 0,
             stack: SpreadView::vertical(
                 VStackView::new(ViewList3::new(
-                    SpreadView::horizontal(HStack0::new(&view_context)),
+                    SpreadView::horizontal(HStack0::new(&ui_context)),
                     SpreadView::horizontal(HStackView::new(ViewList1::new(
-                        TextView::new(&view_context)
+                        TextView::new(&ui_context)
                             .with_font_size(48.0)
                             .with_bg_color(Srgba::from_hex(0x00000000))
                             .with_fg_color(Srgb::from_hex(0xFFFFFF)),
                     ))),
-                    SpreadView::horizontal(HStack2::new(&view_context, texture)),
+                    SpreadView::horizontal(HStack2::new(&ui_context, texture)),
                 ))
                 .with_layout(StackLayout::EqualSpacing),
             ),
-            view_context,
+            ui_context,
         };
         self_.window_resized();
         self_.update_counter_text();
         self_
+    }
+
+    fn button_callback_increment(&mut self, event: ButtonEvent) {
+        if event.is_button_trigger() {
+            self.counter += 1;
+            self.update_counter_text();
+        }
+    }
+
+    fn button_callback_decrement(&mut self, event: ButtonEvent) {
+        if event.is_button_trigger() {
+            self.counter -= 1;
+            self.update_counter_text();
+        }
     }
 
     fn update_counter_text(&mut self) {
@@ -341,7 +319,7 @@ impl<'cx> UiState<'cx> {
                 string
             });
 
-        self.view_context.prepare_view_bounded(
+        self.ui_context.prepare_view_bounded(
             &self.device,
             &self.queue,
             &canvas,
@@ -349,7 +327,7 @@ impl<'cx> UiState<'cx> {
             &mut self.background_rect_view,
         );
 
-        self.view_context.prepare_view(
+        self.ui_context.prepare_view(
             &self.device,
             &self.queue,
             &canvas,
@@ -357,10 +335,10 @@ impl<'cx> UiState<'cx> {
             &mut self.stack,
         );
 
-        self.view_context
+        self.ui_context
             .draw_view(&mut render_pass, &self.background_rect_view);
 
-        self.view_context.draw_view(&mut render_pass, &self.stack);
+        self.ui_context.draw_view(&mut render_pass, &self.stack);
 
         drop(render_pass);
 

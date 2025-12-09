@@ -154,10 +154,10 @@ impl AppResources {
     /// Returns a new subpath.
     pub fn solve_relative_subpath(
         &self,
-        origin_subpath: impl AsRef<Path>,
+        subpath: impl AsRef<Path>,
         relative_path: impl AsRef<Path>,
     ) -> PathBuf {
-        let origin_subpath = PathBuf::from(origin_subpath.as_ref());
+        let origin_subpath = PathBuf::from(subpath.as_ref());
         match origin_subpath.parent() {
             Some(path) => path.join(relative_path),
             None => relative_path.as_ref().into(),

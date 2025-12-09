@@ -5,8 +5,6 @@ use crate::{
     view::{View, ViewList},
 };
 
-use super::ControlFlow;
-
 macro_rules! define_ViewListN {
     ($name:ident, $($fields:ident : $ty_params:ident),+ $(,)?) => {
         pub struct $name<UiState, $($ty_params),+> {
@@ -22,10 +20,9 @@ macro_rules! define_ViewListN {
                 }
             }
         }
-        impl<'cx, UiState, $($ty_params),+> ViewList<'cx> for $name<UiState, $($ty_params),+>
+        impl<'cx, UiState: 'cx, $($ty_params),+> ViewList<'cx> for $name<UiState, $($ty_params),+>
         where
-            UiState: 'cx,
-            $($ty_params : View<UiState> + 'cx),+
+            $($ty_params : View<'cx, UiState> + 'cx),+
         {
             type UiState = UiState;
             impl_view_list! { 'cx, $($fields),+ }

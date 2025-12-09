@@ -3,19 +3,19 @@ use std::cell::OnceCell;
 use cgmath::*;
 
 use crate::{
-    element::{Bounds, RectSize, TextElement},
+    element::{Bounds, Font, RectSize, TextElement},
     param_getters_setters,
-    view::{View, ViewContext},
+    view::{UiContext, View},
     wgpu_utils::Rgba,
 };
 
 #[derive(Debug)]
-pub struct TextView {
+pub struct TextView<'cx> {
     n_lines: usize,
     n_columns: usize,
     text: String,
     font_size: f32,
-    relative_font_width: f32,
+    font: Font<'cx>,
     fg_color: Rgba,
     bg_color: Rgba,
     origin: Point2<f32>,
@@ -24,14 +24,14 @@ pub struct TextView {
     raw: OnceCell<TextElement>,
 }
 
-impl TextView {
-    pub fn new<UiState>(view_context: &ViewContext<UiState>) -> Self {
+impl<'cx> TextView<'cx> {
+    pub fn new<UiState>(ui_context: &UiContext<'cx, UiState>) -> Self {
         Self {
             n_lines: 1,
             n_columns: 0,
             text: String::new(),
             font_size: 12.,
-            relative_font_width: view_context.text_renderer().font().glyph_relative_width(),
+            font: ui_context.text_renderer().font(),
             fg_color: Rgba::from_hex(0xFFFFFF),
             bg_color: Rgba::from_hex(0x00000000),
             origin: point2(0., 0.),
@@ -105,38 +105,38 @@ impl TextView {
         self.n_lines
     }
 
-    pub fn size(&self) -> RectSize {
+    pub fn size(&self) -> RectSize<f32> {
         RectSize::new(
-            (self.n_columns as f32) * self.relative_font_width * self.font_size(),
+            (self.n_columns as f32) * self.font.glyph_relative_width() * self.font_size(),
             self.n_lines as f32 * self.font_size(),
         )
     }
 
-    pub fn set_bounds_(&mut self, bounds: Bounds) {
+    pub fn set_bounds_(&mut self, bounds: Bounds<f32>) {
         self.needs_update = true;
         self.origin = bounds.origin;
     }
 }
 
-impl<UiState> View<UiState> for TextView {
-    fn preferred_size(&mut self) -> RectSize {
+impl<'cx, UiState> View<'cx, UiState> for TextView<'cx> {
+    fn preferred_size(&mut self) -> RectSize<f32> {
         self.size()
     }
 
-    fn apply_bounds(&mut self, bounds: Bounds) {
+    fn apply_bounds(&mut self, bounds: Bounds<f32>) {
         self.set_bounds_(bounds);
     }
 
     fn prepare_for_drawing(
         &mut self,
-        view_context: &ViewContext<UiState>,
+        ui_context: &UiContext<UiState>,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         canvas: &crate::wgpu_utils::CanvasView,
     ) {
         let raw = self.raw.get_or_init(|| {
             self.text_needs_update = false; // `create_text` updates the text
-            view_context.text_renderer().create_text(device, &self.text)
+            ui_context.text_renderer().create_text(device, &self.text)
         });
         // Projection always needs to be set, since `needs_update` does not keep track of canvas
         // size.
@@ -150,14 +150,14 @@ impl<UiState> View<UiState> for TextView {
         if self.text_needs_update {
             self.text_needs_update = false;
             let raw = self.raw.get_mut().unwrap();
-            view_context
+            ui_context
                 .text_renderer()
                 .update_text(device, raw, &self.text);
         }
     }
 
-    fn draw(&self, view_context: &ViewContext<UiState>, render_pass: &mut wgpu::RenderPass) {
-        view_context
+    fn draw(&self, ui_context: &UiContext<UiState>, render_pass: &mut wgpu::RenderPass) {
+        ui_context
             .text_renderer()
             .draw_text(render_pass, self.raw.get().unwrap());
     }

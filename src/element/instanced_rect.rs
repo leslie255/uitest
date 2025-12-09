@@ -172,7 +172,7 @@ impl RectInstance {
     /// Convenience function over `with_model_view` and `with_normalized_line_width`.
     /// Sets `model_view` and normalized `line_width` according to the bounds and line width
     /// provided.
-    pub fn from_parameters(rect: Bounds, line_width: impl Into<LineWidth>) -> Self {
+    pub fn from_parameters(rect: Bounds<f32>, line_width: impl Into<LineWidth>) -> Self {
         let model_view = Matrix3::from_translation(rect.origin.to_vec())
             * Matrix3::from_nonuniform_scale(rect.size.width, rect.size.height);
         let line_width_normalized = line_width.into().normalized_in(rect.size);

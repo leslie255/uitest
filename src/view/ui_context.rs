@@ -17,7 +17,7 @@ use crate::{
 /// `'cx` is for allowing `UiState` to contain captured lifetimes, which is necessary for
 /// `MouseEventRouter` as it needs to type erase all event listeners.
 #[derive(Clone)]
-pub struct ViewContext<'cx, UiState> {
+pub struct UiContext<'cx, UiState> {
     rect_renderer: RectRenderer<'cx>,
     instanced_rect_renderer: InstancedRectRenderer<'cx>,
     text_renderer: TextRenderer<'cx>,
@@ -25,7 +25,7 @@ pub struct ViewContext<'cx, UiState> {
     mouse_event_router: Arc<MouseEventRouter<'cx, UiState>>,
 }
 
-impl<'cx, UiState> ViewContext<'cx, UiState> {
+impl<'cx, UiState> UiContext<'cx, UiState> {
     pub fn create(
         device: &wgpu::Device,
         queue: &wgpu::Queue,
@@ -41,7 +41,7 @@ impl<'cx, UiState> ViewContext<'cx, UiState> {
         // TODO: Move fonts loading to per-TextElement instance.
         let font = try_!(
             ViewContextCreationStage::FontLoading,
-            Font::load_from_path(resources, "fonts/big_blue_terminal.json"),
+            Font::load_from_resources(resources, "fonts/big_blue_terminal.json"),
         );
         let text_renderer = try_!(
             ViewContextCreationStage::TextRendererCreation,
@@ -114,7 +114,7 @@ impl Display for ViewContextCreationError {
     }
 }
 
-impl<'cx, UiState> ViewContext<'cx, UiState> {
+impl<'cx, UiState> UiContext<'cx, UiState> {
     pub fn rect_renderer(&self) -> &RectRenderer<'cx> {
         &self.rect_renderer
     }
@@ -137,8 +137,8 @@ impl<'cx, UiState> ViewContext<'cx, UiState> {
         queue: &wgpu::Queue,
         canvas: &CanvasView,
         origin: Point2<f32>,
-        view: &mut impl View<UiState>,
-    ) -> Bounds {
+        view: &mut impl View<'cx, UiState>,
+    ) -> Bounds<f32> {
         let preferred_size = view.preferred_size();
         let canvas_size = canvas.logical_size;
         let remaining_size = RectSize {
@@ -159,14 +159,14 @@ impl<'cx, UiState> ViewContext<'cx, UiState> {
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         canvas: &CanvasView,
-        bounds: Bounds,
-        view: &mut impl View<UiState>,
+        bounds: Bounds<f32>,
+        view: &mut impl View<'cx, UiState>,
     ) {
         view.apply_bounds(bounds);
         view.prepare_for_drawing(self, device, queue, canvas);
     }
 
-    pub fn draw_view(&self, render_pass: &mut wgpu::RenderPass, view: &impl View<UiState>) {
+    pub fn draw_view(&self, render_pass: &mut wgpu::RenderPass, view: &impl View<'cx, UiState>) {
         view.draw(self, render_pass);
     }
 }

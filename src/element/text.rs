@@ -3,15 +3,13 @@ use std::path::Path;
 use std::ops::Range;
 
 use bytemuck::{Pod, Zeroable};
-use image::RgbaImage;
 use serde::{Deserialize, Serialize};
 
 use cgmath::*;
-use wgpu::util::DeviceExt;
 
 use crate::{
     AppResources,
-    element::Bounds,
+    element::{Bounds, ImageRef, RectSize, Texture2d},
     resources::LoadResourceError,
     utils::*,
     wgpu_utils::{
@@ -19,12 +17,6 @@ use crate::{
         vertex_formats::Vertex2dUV,
     },
 };
-
-fn normalize_coord_in_texture(texture_size: Vector2<u32>, coord: Vector2<u32>) -> Vector2<f32> {
-    let texture_size_f = texture_size.map(|x| x as f32);
-    let coord_f = coord.map(|x| x as f32);
-    coord_f.div_element_wise(texture_size_f)
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FontMetaJson {
@@ -43,13 +35,13 @@ pub struct Font<'cx> {
     present_start: u8,
     present_end: u8,
     glyphs_per_line: u32,
-    glyph_size: Vector2<u32>,
-    glyph_size_normalised: Vector2<f32>,
-    atlas_image: &'cx image::RgbaImage,
+    glyph_size: RectSize<u32>,
+    glyph_size_uv: RectSize<f32>,
+    atlas_image: ImageRef<'cx>,
 }
 
 impl<'cx> Font<'cx> {
-    pub fn load_from_path(
+    pub fn load_from_resources(
         resources: &'cx AppResources,
         json_subpath: impl AsRef<Path>,
     ) -> Result<Self, LoadResourceError> {
@@ -61,16 +53,21 @@ impl<'cx> Font<'cx> {
             present_start: font_meta.present_start,
             present_end: font_meta.present_end,
             glyphs_per_line: font_meta.glyphs_per_line,
-            glyph_size: vec2(font_meta.glyph_width, font_meta.glyph_height),
-            glyph_size_normalised: vec2(
+            glyph_size: RectSize::new(font_meta.glyph_width, font_meta.glyph_height),
+            glyph_size_uv: RectSize::new(
                 font_meta.glyph_width as f32 / atlas_image.width() as f32,
                 font_meta.glyph_height as f32 / atlas_image.height() as f32,
             ),
-            atlas_image,
+            atlas_image: ImageRef {
+                width: atlas_image.width(),
+                height: atlas_image.height(),
+                format: wgpu::TextureFormat::Rgba8UnormSrgb,
+                data: atlas_image.as_ref(),
+            },
         })
     }
 
-    pub fn atlas_image(&self) -> &'cx RgbaImage {
+    pub fn atlas_image(&self) -> ImageRef<'cx> {
         self.atlas_image
     }
 
@@ -82,35 +79,34 @@ impl<'cx> Font<'cx> {
         self.present_range().contains(&(char as u8))
     }
 
-    fn position_for_glyph(&self, char: char) -> Vector2<u32> {
-        assert!(self.has_glyph(char));
-        let ith_glyph = ((char as u8) - self.present_start) as u32;
-        let glyph_coord = vec2(
-            ith_glyph % self.glyphs_per_line,
-            ith_glyph / self.glyphs_per_line,
+    fn uv_position_for_glyph(&self, char: char) -> Option<Point2<f32>> {
+        if !self.has_glyph(char) {
+            return None;
+        }
+        let i_glyph = ((char as u8) - self.present_start) as u32;
+        let glyph_coord = point2(
+            (i_glyph % self.glyphs_per_line) as f32 * self.glyph_size_uv.width,
+            (i_glyph / self.glyphs_per_line) as f32 * self.glyph_size_uv.height,
         );
-        glyph_coord.mul_element_wise(self.glyph_size)
+        Some(glyph_coord)
     }
 
-    pub fn bounding_box_for_char(&self, char: char) -> Bounds {
-        let top_left = self.position_for_glyph(char);
-        let atlas_size = vec2(self.atlas_image.width(), self.atlas_image.height());
-        let top_left = normalize_coord_in_texture(atlas_size, top_left);
-        Bounds::from_scalars(
-            top_left.x,
-            top_left.y,
-            self.glyph_size_normalised.x,
-            self.glyph_size_normalised.y,
-        )
+    pub fn uv_bounds_for_char(&self, char: char) -> Option<Bounds<f32>> {
+        let top_left = self.uv_position_for_glyph(char)?;
+        Some(Bounds::new(top_left, self.glyph_size_uv))
     }
 
     /// Glyph width if glyph height is 1.
     pub fn glyph_relative_width(&self) -> f32 {
-        (self.glyph_size.x as f32) / (self.glyph_size.y as f32)
+        (self.glyph_size.width as f32) / (self.glyph_size.height as f32)
     }
 
-    pub fn glyph_size(&self) -> Vector2<u32> {
+    pub fn glyph_size(&self) -> RectSize<u32> {
         self.glyph_size
+    }
+
+    pub fn glyph_size_uv(&self) -> RectSize<f32> {
+        self.glyph_size_uv
     }
 }
 
@@ -282,27 +278,8 @@ impl<'cx> TextRenderer<'cx> {
             multiview: None,
             cache: None,
         });
-        let atlas_image = font.atlas_image();
-        let texture = device.create_texture_with_data(
-            queue,
-            &wgpu::TextureDescriptor {
-                label: None,
-                size: wgpu::Extent3d {
-                    width: atlas_image.width(),
-                    height: atlas_image.height(),
-                    depth_or_array_layers: 1,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: wgpu::TextureDimension::D2,
-                format: wgpu::TextureFormat::Rgba8Unorm,
-                usage: wgpu::TextureUsages::COPY_DST | wgpu::TextureUsages::TEXTURE_BINDING,
-                view_formats: &[wgpu::TextureFormat::Rgba8Unorm],
-            },
-            wgpu::wgt::TextureDataOrder::LayerMajor,
-            atlas_image,
-        );
-        let texture_view = texture.create_view(&the_default());
+        let texture = Texture2d::create(device, queue, font.atlas_image);
+        let texture_view = texture.wgpu_texture_view().clone();
         let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
             label: None,
             address_mode_u: wgpu::AddressMode::Repeat,
@@ -319,10 +296,9 @@ impl<'cx> TextRenderer<'cx> {
         });
 
         // Vertex buffer.
-        let (atlas_width, atlas_height) = font.atlas_image().dimensions();
-        let glyph_size_pixels = font.glyph_size();
-        let glyph_width = glyph_size_pixels.x as f32 / atlas_width as f32;
-        let glyph_height = glyph_size_pixels.y as f32 / atlas_height as f32;
+        let glyph_size_uv = font.glyph_size_uv();
+        let glyph_width = glyph_size_uv.width;
+        let glyph_height = glyph_size_uv.height;
         let vertices_data = &[
             Vertex2dUV::new([0., 0.], [0., 0.]),
             Vertex2dUV::new([font.glyph_relative_width(), 0.], [glyph_width, 0.]),
@@ -404,16 +380,13 @@ impl<'cx> TextRenderer<'cx> {
             } else if char == '\r' {
                 column = 0;
                 continue;
-            } else if !self.font.has_glyph(char) {
-                continue;
             }
-            let quad = self.font.bounding_box_for_char(char);
+            let Some(glyph_bounds) = self.font.uv_bounds_for_char(char) else {
+                continue;
+            };
             instances.push(TextInstance {
-                position_offset: [
-                    column as f32 * self.font.glyph_relative_width(),
-                    row as f32,
-                ],
-                uv_offset: quad.origin.into(),
+                position_offset: [column as f32 * self.font.glyph_relative_width(), row as f32],
+                uv_offset: glyph_bounds.origin.into(),
             });
             column += 1;
         }

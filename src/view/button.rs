@@ -2,7 +2,10 @@ use std::{
     fmt::Debug,
     sync::{
         Arc,
-        atomic::{self, AtomicBool, AtomicU8},
+        atomic::{
+            self, AtomicBool, AtomicU8,
+            Ordering::{AcqRel, Acquire, Release},
+        },
     },
 };
 
@@ -12,8 +15,9 @@ use winit::event::MouseButton;
 use crate::{
     element::{Bounds, LineWidth, RectSize},
     mouse_event::{self, MouseEvent, MouseEventKind, MouseEventListener},
-    view::{RectView, TextView, View, ViewContext},
-    wgpu_utils::{Srgb, Srgba},
+    utils::AtomicBoolExt as _,
+    view::{RectView, TextView, UiContext, View},
+    wgpu_utils::{CanvasView, Srgb, Srgba},
 };
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,10 +38,12 @@ impl AtomicButtonState {
         Self(AtomicU8::new(value as u8))
     }
 
+    #[track_caller]
     pub fn load(&self, order: atomic::Ordering) -> ButtonState {
         unsafe { Self::cast_from_repr(self.0.load(order)) }
     }
 
+    #[track_caller]
     pub fn store(&self, value: ButtonState, order: atomic::Ordering) {
         self.0.store(value as u8, order)
     }
@@ -77,6 +83,27 @@ impl ButtonStyle {
     pub fn with_font_size(self, font_size: f32) -> Self {
         Self { font_size, ..self }
     }
+
+    pub fn scaled(self, scale: f32) -> ButtonStyle {
+        Self {
+            line_width: match self.line_width {
+                LineWidth::Uniform(width) => LineWidth::Uniform(width * scale),
+                LineWidth::PerBorder {
+                    left,
+                    top,
+                    right,
+                    bottom,
+                } => LineWidth::PerBorder {
+                    left: left * scale,
+                    top: top * scale,
+                    right: right * scale,
+                    bottom: bottom * scale,
+                },
+            },
+            font_size: self.font_size * scale,
+            ..self
+        }
+    }
 }
 
 /// State-specific button style.
@@ -92,51 +119,82 @@ pub type ButtonCallback<'cx, UiState> =
 
 pub struct ButtonView<'cx, UiState: 'cx> {
     rect_view: RectView,
-    text_view: TextView,
+    text_view: TextView<'cx>,
     style: ButtonStyle,
-    needs_update_bounds: bool,
     dispatch: Arc<ButtonDispatch<'cx, UiState>>,
-    listener_handle: mouse_event::ListenerHandle<'cx, UiState>,
+    /// The callback that has been set by `set_callback` but hasn't been updated into event router
+    /// yet. (Would be updated in the next `prepare_for_drawing` call).
+    new_callback: Option<ButtonCallback<'cx, UiState>>,
+    /// `None` until the first `prepare_for_drawing`.
+    listener_handle: Option<mouse_event::ListenerHandle<'cx, UiState>>,
 }
 
 impl<'cx, UiState> ButtonView<'cx, UiState> {
-    pub fn new(
-        view_context: &ViewContext<'cx, UiState>,
-        style: ButtonStyle,
-        callback: Option<ButtonCallback<'cx, UiState>>,
-    ) -> Self {
-        let default_size = RectSize::new(64., 24.);
+    pub fn new(ui_context: &UiContext<'cx, UiState>) -> Self {
         let dispatch = Arc::new(ButtonDispatch {
             state: AtomicButtonState::new(ButtonState::Idle),
             state_updated: AtomicBool::new(true),
-            callback,
+            callback: None,
         });
-        let listener_handle = view_context
-            .mouse_event_router()
-            .register_listener(Bounds::new(point2(0., 0.), default_size), dispatch.clone());
-        let mut self_ = Self {
-            rect_view: RectView::new(default_size),
-            text_view: TextView::new(view_context),
-            style,
-            needs_update_bounds: true,
+        Self {
+            rect_view: RectView::new(Self::DEFAULT_SIZE),
+            text_view: TextView::new(ui_context),
+            style: Self::DEFAULT_STYLE,
             dispatch,
-            listener_handle,
-        };
-        self_.set_style(style);
-        self_
+            new_callback: None,
+            listener_handle: None,
+        }
     }
 
-    pub fn size(&self) -> RectSize {
+    pub fn set_callback(
+        &mut self,
+        callback: impl for<'a> Fn(&'a mut UiState, ButtonEvent) + Send + Sync + 'cx,
+    ) {
+        self.new_callback = Some(Box::new(callback));
+    }
+
+    pub fn with_callback(
+        mut self,
+        callback: impl for<'a> Fn(&'a mut UiState, ButtonEvent) + Send + Sync + 'cx,
+    ) -> Self {
+        self.set_callback(callback);
+        self
+    }
+
+    const DEFAULT_SIZE: RectSize<f32> = RectSize {
+        width: 64.,
+        height: 24.,
+    };
+
+    const DEFAULT_STYLE: ButtonStyle = ButtonStyle {
+        line_width: LineWidth::Uniform(2.),
+        font_size: 12.,
+        idle_style: ButtonStateStyle {
+            text_color: Srgb::from_hex(0xFFFFFF),
+            fill_color: Srgb::from_hex(0x2A2A2A),
+            line_color: Srgb::from_hex(0x494949),
+        },
+        hovered_style: ButtonStateStyle {
+            text_color: Srgb::from_hex(0xFFFFFF),
+            fill_color: Srgb::from_hex(0x424242),
+            line_color: Srgb::from_hex(0xA2A2A2),
+        },
+        pressed_style: ButtonStateStyle {
+            text_color: Srgb::from_hex(0xFFFFFF),
+            fill_color: Srgb::from_hex(0xA2A2A2),
+            line_color: Srgb::from_hex(0xA2A2A2),
+        },
+    };
+
+    pub fn size(&self) -> RectSize<f32> {
         self.rect_view.size()
     }
 
-    pub fn set_size(&mut self, size: impl Into<RectSize>) {
+    pub fn set_size(&mut self, size: impl Into<RectSize<f32>>) {
         self.rect_view.set_size(size);
-        self.relayout_text();
-        self.needs_update_bounds = true;
     }
 
-    pub fn with_size(mut self, size: impl Into<RectSize>) -> Self {
+    pub fn with_size(mut self, size: impl Into<RectSize<f32>>) -> Self {
         self.set_size(size);
         self
     }
@@ -150,13 +208,27 @@ impl<'cx, UiState> ButtonView<'cx, UiState> {
         self.update_styles();
     }
 
+    pub fn with_style(mut self, style: ButtonStyle) -> Self {
+        self.set_style(style);
+        self
+    }
+
     pub fn set_title(&mut self, title: String) {
         self.text_view.set_text(title);
         self.relayout_text();
     }
 
+    pub fn with_title(mut self, title: String) -> Self {
+        self.set_title(title);
+        self
+    }
+
     pub fn state(&self) -> ButtonState {
         self.dispatch.state()
+    }
+
+    pub fn set_state(&self, state: ButtonState) {
+        self.dispatch.set_state(state)
     }
 
     fn update_styles(&mut self) {
@@ -187,44 +259,53 @@ impl<'cx, UiState> ButtonView<'cx, UiState> {
     }
 }
 
-impl<'cx, UiState: 'cx> View<UiState> for ButtonView<'cx, UiState> {
-    fn preferred_size(&mut self) -> RectSize {
+impl<'cx, UiState: 'cx> View<'cx, UiState> for ButtonView<'cx, UiState> {
+    fn preferred_size(&mut self) -> RectSize<f32> {
         self.size()
     }
 
-    fn apply_bounds(&mut self, bounds: Bounds) {
+    fn apply_bounds(&mut self, bounds: Bounds<f32>) {
         // Assuming text is single-line.
         self.rect_view.set_bounds_(bounds);
         self.relayout_text();
-        self.needs_update_bounds = true;
+        if let Some(listener_handle) = self.listener_handle.as_ref() {
+            listener_handle.update_bounds(self.rect_view.bounds());
+        }
     }
 
     fn prepare_for_drawing(
         &mut self,
-        view_context: &ViewContext<UiState>,
+        ui_context: &UiContext<'cx, UiState>,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        canvas: &crate::wgpu_utils::CanvasView,
+        canvas: &CanvasView,
     ) {
-        let state_updated = self
-            .dispatch
-            .state_updated
-            .fetch_and(false, atomic::Ordering::AcqRel);
+        if let Some(callback) = self.new_callback.take() {
+            self.dispatch = Arc::new(ButtonDispatch {
+                state: AtomicButtonState::new(self.dispatch.state.load(Acquire)),
+                state_updated: AtomicBool::new(self.dispatch.state_updated.load(Acquire)),
+                callback: Some(callback),
+            });
+        }
+        if self.listener_handle.is_none() {
+            self.listener_handle = Some(ui_context.mouse_event_router().register_listener(
+                Bounds::new(point2(0., 0.), self.size()),
+                self.dispatch.clone(),
+            ));
+        }
+        let state_updated = self.dispatch.state_updated.fetch_set(false, AcqRel);
         if state_updated {
             self.update_styles();
         }
-        if self.needs_update_bounds {
-            self.listener_handle.update_bounds(self.rect_view.bounds());
-        }
         self.rect_view
-            .prepare_for_drawing(view_context, device, queue, canvas);
+            .prepare_for_drawing(ui_context, device, queue, canvas);
         self.text_view
-            .prepare_for_drawing(view_context, device, queue, canvas);
+            .prepare_for_drawing(ui_context, device, queue, canvas);
     }
 
-    fn draw(&self, view_context: &ViewContext<UiState>, render_pass: &mut wgpu::RenderPass) {
-        self.rect_view.draw(view_context, render_pass);
-        self.text_view.draw(view_context, render_pass);
+    fn draw(&self, ui_context: &UiContext<'cx, UiState>, render_pass: &mut wgpu::RenderPass) {
+        self.rect_view.draw(ui_context, render_pass);
+        self.text_view.draw(ui_context, render_pass);
     }
 }
 
@@ -236,8 +317,12 @@ struct ButtonDispatch<'cx, UiState> {
 }
 
 impl<'cx, UiState> ButtonDispatch<'cx, UiState> {
-    pub fn state(&self) -> ButtonState {
-        self.state.load(atomic::Ordering::Acquire)
+    fn state(&self) -> ButtonState {
+        self.state.load(Acquire)
+    }
+
+    fn set_state(&self, state: ButtonState) {
+        self.state.store(state, Release)
     }
 }
 
@@ -265,8 +350,8 @@ impl<'cx, UiState> MouseEventListener<UiState> for Arc<ButtonDispatch<'cx, UiSta
             } => Idle,
             _ => old_state,
         };
-        self.state.store(new_state, atomic::Ordering::Release);
-        self.state_updated.store(true, atomic::Ordering::Release);
+        self.set_state(new_state);
+        self.state_updated.store(true, Release);
         if let Some(callback) = self.callback.as_ref() {
             let button_event = ButtonEvent {
                 kind: event.kind,

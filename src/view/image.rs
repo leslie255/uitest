@@ -1,76 +1,116 @@
-use std::cell::OnceCell;
-
 use crate::{
     element::{Bounds, ImageElement, RectSize, Texture2d},
     param_getters_setters,
     utils::*,
-    view::{View, ViewContext},
+    view::{UiContext, View},
     wgpu_utils::CanvasView,
 };
 
 #[derive(Debug, Clone)]
 pub struct ImageView {
-    size: RectSize,
-    bounds: Bounds,
+    size: RectSize<f32>,
+    bounds: Bounds<f32>,
     bounds_updated: bool,
-    texture: Texture2d,
-    raw: OnceCell<ImageElement>,
+    texture: Option<Texture2d>,
+    texture_updated: bool,
+    raw: Option<ImageElement>,
+}
+
+impl Default for ImageView {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl ImageView {
-    pub fn new(texture: Texture2d) -> Self {
+    pub fn new() -> Self {
         Self {
-            size: texture.size(),
+            size: RectSize::new(100., 100.),
             bounds: the_default(),
             bounds_updated: false,
-            texture,
-            raw: OnceCell::new(),
+            texture: None,
+            texture_updated: false,
+            raw: None,
         }
+    }
+
+    pub fn new_with_texture(texture: Texture2d) -> Self {
+        let mut self_ = Self::new();
+        self_.set_texture(texture);
+        self_.resize_to_fit();
+        self_
     }
 
     param_getters_setters! {
         vis: pub,
-        param_ty: RectSize,
+        param_ty: RectSize<f32>,
         param: size,
         param_mut: size_mut,
         set_param: set_size,
         with_param: with_size,
         param_mut_preamble: |_: &mut Self| {},
     }
+
+    pub fn texture(&self) -> Option<&Texture2d> {
+        self.texture.as_ref()
+    }
+
+    pub fn texture_mut(&mut self) -> &mut Option<Texture2d> {
+        self.texture_updated = true;
+        &mut self.texture
+    }
+
+    pub fn set_texture(&mut self, texture: impl Into<Option<Texture2d>>) {
+        *self.texture_mut() = texture.into();
+    }
+
+    pub fn with_texture(mut self, texture: impl Into<Option<Texture2d>>) -> Self {
+        *self.texture_mut() = texture.into();
+        self
+    }
+
+    /// Set the preferred size to size of the texture.
+    pub fn resize_to_fit(&mut self) {
+        if let Some(texture) = self.texture.as_ref() {
+            self.set_size(texture.size());
+        }
+    }
 }
 
-impl<UiState> View<UiState> for ImageView {
-    fn preferred_size(&mut self) -> RectSize {
+impl<UiState> View<'_, UiState> for ImageView {
+    fn preferred_size(&mut self) -> RectSize<f32> {
         self.size
     }
 
-    fn apply_bounds(&mut self, bounds: Bounds) {
+    fn apply_bounds(&mut self, bounds: Bounds<f32>) {
         self.bounds = bounds;
         self.bounds_updated = true
     }
 
     fn prepare_for_drawing(
         &mut self,
-        view_context: &ViewContext<UiState>,
+        ui_context: &UiContext<UiState>,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         canvas: &CanvasView,
     ) {
-        self.raw.get_or_init(|| {
-            view_context
-                .image_renderer()
-                .create_image(device, &self.texture)
-        });
-        let raw = self.raw.get().unwrap();
-        raw.set_projection(queue, canvas.projection);
-        if self.bounds_updated {
-            self.bounds_updated = false;
-            raw.set_parameters(queue, self.bounds);
+        if (self.texture_updated || self.raw.is_none())
+            && let Some(texture) = self.texture.as_ref()
+        {
+            self.raw = Some(ui_context.image_renderer().create_image(device, texture));
+        }
+        if let Some(raw) = self.raw.as_ref() {
+            raw.set_projection(queue, canvas.projection);
+            if self.bounds_updated {
+                self.bounds_updated = false;
+                raw.set_parameters(queue, self.bounds);
+            }
         }
     }
 
-    fn draw(&self, view_context: &ViewContext<UiState>, render_pass: &mut wgpu::RenderPass) {
-        let raw = self.raw.get().unwrap();
-        view_context.image_renderer().draw_image(render_pass, raw);
+    fn draw(&self, ui_context: &UiContext<UiState>, render_pass: &mut wgpu::RenderPass) {
+        if let Some(raw) = self.raw.as_ref() {
+            ui_context.image_renderer().draw_image(render_pass, raw);
+        }
     }
 }

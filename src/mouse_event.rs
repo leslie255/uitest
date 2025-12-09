@@ -55,7 +55,7 @@ pub struct MouseEventRouter<'cx, UiState> {
     cursor_position: Mutex<Option<Point2<f32>>>,
     /// Using `u64` as storage for `f64`, as rust doesn't have an `AtomicF64`.
     scale_factor: AtomicU64,
-    bounds: Mutex<Bounds>,
+    bounds: Mutex<Bounds<f32>>,
     listeners: Mutex<Vec<Option<Listener<'cx, UiState>>>>,
     /// Flag for when at least one of the listeners have changed their bounds, indicating that
     /// something in the frame has changed. In this case, we should scan for hovering changes even
@@ -67,7 +67,7 @@ pub struct MouseEventRouter<'cx, UiState> {
 }
 
 impl<'cx, UiState> MouseEventRouter<'cx, UiState> {
-    pub fn new(bounds: Bounds) -> Self {
+    pub fn new(bounds: Bounds<f32>) -> Self {
         Self {
             cursor_position: Mutex::new(None),
             scale_factor: AtomicU64::new(bytemuck::cast(1.0f64)),
@@ -80,7 +80,7 @@ impl<'cx, UiState> MouseEventRouter<'cx, UiState> {
 
     pub fn register_listener(
         self: &Arc<Self>,
-        bounds: Bounds,
+        bounds: Bounds<f32>,
         listener: impl MouseEventListener<UiState> + 'cx,
     ) -> ListenerHandle<'cx, UiState> {
         let mut listeners = self.listeners.lock().unwrap();
@@ -102,7 +102,7 @@ impl<'cx, UiState> MouseEventRouter<'cx, UiState> {
         listeners[index] = None;
     }
 
-    fn update_bounds(&self, index: usize, bounds: Bounds) {
+    fn update_bounds(&self, index: usize, bounds: Bounds<f32>) {
         let mut listeners = self.listeners.lock().unwrap();
         listeners[index].as_mut().unwrap().bounds = bounds;
         self.bounds_changed.store(true, atomic::Ordering::Release);
@@ -247,11 +247,11 @@ impl<'cx, UiState> MouseEventRouter<'cx, UiState> {
         should_redraw
     }
 
-    pub fn set_bounds(&self, bounding_box: Bounds) {
+    pub fn set_bounds(&self, bounding_box: Bounds<f32>) {
         *self.bounds.lock().unwrap() = bounding_box;
     }
 
-    pub fn get_bounds(&self) -> Bounds {
+    pub fn get_bounds(&self) -> Bounds<f32> {
         *self.bounds.lock().unwrap()
     }
 
@@ -279,7 +279,7 @@ impl<'cx, UiState> MouseEventRouter<'cx, UiState> {
 
 struct Listener<'cx, UiState> {
     /// The bounds of this listener.
-    bounds: Bounds,
+    bounds: Bounds<f32>,
     /// Is the cursor currently hovering over this listener?
     is_hovered: bool,
     /// Records the buttons that the listener is currently being pressed by.
@@ -320,7 +320,7 @@ impl<UiState> Drop for ListenerHandle<'_, UiState> {
 }
 
 impl<'cx, UiState> ListenerHandle<'cx, UiState> {
-    pub fn update_bounds(&self, bounds: Bounds) {
+    pub fn update_bounds(&self, bounds: Bounds<f32>) {
         if let Some(router) = self.router.upgrade() {
             router.update_bounds(self.index, bounds);
         };

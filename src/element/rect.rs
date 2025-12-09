@@ -1,6 +1,3 @@
-use std::fmt::{self, Debug};
-
-use bytemuck::{Pod, Zeroable};
 use cgmath::*;
 use derive_more::From;
 
@@ -10,53 +7,63 @@ use crate::{
     wgpu_utils::{AsBindGroup, CanvasFormat, Rgba, UniformBuffer},
 };
 
-#[derive(Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(C)]
-pub struct Bounds {
-    pub origin: Point2<f32>,
-    pub size: RectSize,
+pub struct Bounds<T: Copy> {
+    pub origin: Point2<T>,
+    pub size: RectSize<T>,
 }
 
-impl Debug for Bounds {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("Bounds")
-            .field("x_min", &self.x_min())
-            .field("x_max", &self.x_max())
-            .field("width", &self.width())
-            .field("height", &self.height())
-            .finish()
-    }
-}
-
-impl Default for Bounds {
+impl<T: Copy> Default for Bounds<T>
+where
+    T: Zero,
+{
     fn default() -> Self {
         Self {
-            origin: point2(0., 0.),
-            size: Default::default(),
+            origin: point2(T::zero(), T::zero()),
+            size: the_default(),
         }
     }
 }
 
-impl Bounds {
-    pub const fn new(origin: Point2<f32>, size: RectSize) -> Self {
+impl<T: Copy> Bounds<T> {
+    pub const fn new(origin: Point2<T>, size: RectSize<T>) -> Self {
         Self { origin, size }
     }
 
-    pub const fn from_scalars(x_min: f32, y_min: f32, width: f32, height: f32) -> Self {
+    pub const fn from_scalars(x_min: T, y_min: T, width: T, height: T) -> Self {
         Self {
             origin: point2(x_min, y_min),
             size: RectSize::new(width, height),
         }
     }
 
-    pub const fn x_min(self) -> f32 {
+    pub const fn x_min(self) -> T {
         self.origin.x
     }
 
-    pub const fn y_min(self) -> f32 {
+    pub const fn y_min(self) -> T {
         self.origin.y
     }
 
+    pub const fn width(self) -> T {
+        self.size.width
+    }
+
+    pub const fn height(self) -> T {
+        self.size.height
+    }
+
+    pub const fn with_origin(self, origin: Point2<T>) -> Self {
+        Self { origin, ..self }
+    }
+
+    pub const fn with_size(self, size: RectSize<T>) -> Self {
+        Self { size, ..self }
+    }
+}
+
+impl Bounds<f32> {
     pub const fn x_max(self) -> f32 {
         self.origin.x + self.size.width
     }
@@ -71,14 +78,6 @@ impl Bounds {
 
     pub const fn xy_min(self) -> Point2<f32> {
         self.origin
-    }
-
-    pub const fn width(self) -> f32 {
-        self.size.width
-    }
-
-    pub const fn height(self) -> f32 {
-        self.size.height
     }
 
     pub const fn contains(self, point: Point2<f32>) -> bool {
@@ -96,29 +95,32 @@ impl Bounds {
             self.height() - padding - padding,
         )
     }
+}
 
-    pub const fn with_origin(self, origin: Point2<f32>) -> Self {
-        Self { origin, ..self }
-    }
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RectSize<T: Copy> {
+    pub width: T,
+    pub height: T,
+}
 
-    pub const fn with_size(self, size: RectSize) -> Self {
-        Self { size, ..self }
+impl<T: Copy> Default for RectSize<T>
+where
+    T: Zero,
+{
+    fn default() -> Self {
+        Self {
+            width: T::zero(),
+            height: T::zero(),
+        }
     }
 }
 
-#[derive(Default, Debug, Clone, Copy, PartialEq, Zeroable, Pod)]
-#[repr(C)]
-pub struct RectSize {
-    pub width: f32,
-    pub height: f32,
-}
-
-impl RectSize {
-    pub const fn new(width: f32, height: f32) -> Self {
+impl<T: Copy> RectSize<T> {
+    pub const fn new(width: T, height: T) -> Self {
         Self { width, height }
     }
 
-    pub fn as_vec(self) -> Vector2<f32> {
+    pub fn as_vec(self) -> Vector2<T> {
         vec2(self.width, self.height)
     }
 }
@@ -178,7 +180,7 @@ impl LineWidth {
         }
     }
 
-    pub const fn normalized_in(self, size: RectSize) -> Self {
+    pub const fn normalized_in(self, size: RectSize<f32>) -> Self {
         let [left, top, right, bottom] = self.to_array();
         Self::PerBorder {
             left: left / size.width,
@@ -378,7 +380,7 @@ impl RectElement {
     pub fn set_parameters(
         &self,
         queue: &wgpu::Queue,
-        bounds: Bounds,
+        bounds: Bounds<f32>,
         line_width: impl Into<LineWidth>,
     ) {
         let model_view = Matrix4::from_translation(bounds.origin.to_vec().extend(0.))

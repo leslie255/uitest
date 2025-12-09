@@ -14,7 +14,7 @@ use crate::{
 
 pub trait Canvas {
     fn format(&self) -> CanvasFormat;
-    fn logical_size(&self) -> RectSize;
+    fn logical_size(&self) -> RectSize<f32>;
     fn begin_drawing(&self) -> Result<CanvasView, Box<dyn Error>>;
     fn finish_drawing(&self) -> Result<(), Box<dyn Error>>;
 }
@@ -29,7 +29,7 @@ pub struct CanvasFormat {
 pub struct CanvasView {
     pub color_texture_view: wgpu::TextureView,
     pub depth_stencil_texture_view: Option<wgpu::TextureView>,
-    pub logical_size: RectSize,
+    pub logical_size: RectSize<f32>,
     pub projection: Matrix4<f32>,
 }
 
@@ -37,7 +37,7 @@ impl CanvasView {
     pub fn new(
         color_texture_view: wgpu::TextureView,
         depth_stencil_texture_view: Option<wgpu::TextureView>,
-        logical_size: RectSize,
+        logical_size: RectSize<f32>,
     ) -> Self {
         Self {
             color_texture_view,
@@ -47,14 +47,14 @@ impl CanvasView {
         }
     }
 
-    pub fn bounds(&self) -> Bounds {
+    pub fn bounds(&self) -> Bounds<f32> {
         Bounds {
             origin: point2(0., 0.),
             size: self.logical_size,
         }
     }
 
-    fn projection(logical_size: RectSize, near: f32, far: f32) -> Matrix4<f32> {
+    fn projection(logical_size: RectSize<f32>, near: f32, far: f32) -> Matrix4<f32> {
         cgmath::ortho(0., logical_size.width, logical_size.height, 0., near, far)
     }
 }
@@ -64,7 +64,7 @@ pub struct TextureCanvas {
     color_texture: wgpu::Texture,
     depth_stencil_texture: Option<wgpu::Texture>,
     format: CanvasFormat,
-    logical_size: RectSize,
+    logical_size: RectSize<f32>,
 }
 
 impl TextureCanvas {
@@ -72,7 +72,7 @@ impl TextureCanvas {
         color_texture: wgpu::Texture,
         depth_stencil_texture: Option<wgpu::Texture>,
         format: CanvasFormat,
-        logical_size: RectSize,
+        logical_size: RectSize<f32>,
     ) -> Self {
         Self {
             color_texture,
@@ -88,7 +88,7 @@ impl Canvas for TextureCanvas {
         self.format
     }
 
-    fn logical_size(&self) -> RectSize {
+    fn logical_size(&self) -> RectSize<f32> {
         self.logical_size
     }
 
@@ -103,7 +103,7 @@ impl Canvas for TextureCanvas {
     }
 
     fn finish_drawing(&self) -> Result<(), Box<dyn Error>> {
-        todo!()
+        Ok(())
     }
 }
 
@@ -112,7 +112,7 @@ pub struct WindowCanvas<'window> {
     window_surface: wgpu::Surface<'window>,
     depth_stencil_texture: Option<wgpu::Texture>,
     format: CanvasFormat,
-    logical_size: RectSize,
+    logical_size: RectSize<f32>,
     surface_texture: Mutex<Option<wgpu::SurfaceTexture>>,
     surface_config: wgpu::wgt::SurfaceConfiguration<Vec<wgpu::TextureFormat>>,
 }
@@ -138,7 +138,7 @@ impl<'window> WindowCanvas<'window> {
         window_surface: wgpu::Surface<'window>,
         depth_stencil_texture: Option<wgpu::Texture>,
         format: CanvasFormat,
-        logical_size: RectSize,
+        logical_size: RectSize<f32>,
         surface_config: wgpu::SurfaceConfiguration,
     ) -> Self {
         Self {
@@ -156,7 +156,6 @@ impl<'window> WindowCanvas<'window> {
         adapter: &wgpu::Adapter,
         device: &wgpu::Device,
         window: Arc<Window>,
-        surface_config: impl FnOnce(wgpu::TextureFormat) -> wgpu::SurfaceConfiguration,
     ) -> Self {
         let window_size = window.inner_size();
         let window_scale_factor = window.scale_factor();
@@ -182,7 +181,16 @@ impl<'window> WindowCanvas<'window> {
             },
             // reconfigure_for_size would initialise this field.
             RectSize::new(0., 0.),
-            surface_config(color_format),
+            wgpu::SurfaceConfiguration {
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                format: color_format,
+                view_formats: vec![color_format],
+                alpha_mode: wgpu::CompositeAlphaMode::Auto,
+                width: window_size.width,
+                height: window_size.height,
+                desired_maximum_frame_latency: 3,
+                present_mode: wgpu::PresentMode::AutoVsync,
+            },
         );
         self_.reconfigure_for_size(device, window_size, window_scale_factor, None);
         self_
@@ -221,7 +229,7 @@ impl<'a> Canvas for WindowCanvas<'a> {
         self.format
     }
 
-    fn logical_size(&self) -> RectSize {
+    fn logical_size(&self) -> RectSize<f32> {
         self.logical_size
     }
 

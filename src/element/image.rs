@@ -9,7 +9,7 @@ use crate::{
     wgpu_utils::{AsBindGroup, CanvasFormat, UniformBuffer},
 };
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Copy)]
 pub struct ImageRef<'a> {
     pub width: u32,
     pub height: u32,
@@ -19,7 +19,7 @@ pub struct ImageRef<'a> {
 
 #[derive(Debug, Clone)]
 pub struct Texture2d {
-    size: RectSize,
+    size: RectSize<f32>,
     wgpu_texture_view: wgpu::TextureView,
 }
 
@@ -55,7 +55,7 @@ impl Texture2d {
         &self.wgpu_texture_view
     }
 
-    pub fn size(&self) -> RectSize {
+    pub fn size(&self) -> RectSize<f32> {
         self.size
     }
 }
@@ -96,7 +96,7 @@ impl ImageElement {
 
     /// Convenience function over `set_model_view`.
     /// Sets `model_view` according to the bounds and line width provided.
-    pub fn set_parameters(&self, queue: &wgpu::Queue, bounds: Bounds) {
+    pub fn set_parameters(&self, queue: &wgpu::Queue, bounds: Bounds<f32>) {
         let model_view = Matrix4::from_translation(bounds.origin.to_vec().extend(0.))
             * Matrix4::from_nonuniform_scale(bounds.size.width, bounds.size.height, 1.);
         self.set_model_view(queue, model_view);
