@@ -139,8 +139,11 @@ impl<'cx, UiState> UiContext<'cx, UiState> {
         queue: &wgpu::Queue,
         canvas: &CanvasView,
         origin: Point2<f32>,
-        view: &mut impl View<'cx, UiState>,
-    ) -> Bounds<f32> {
+        view: &mut dyn View<'cx, UiState>,
+    ) -> Bounds<f32>
+    where
+        UiState: 'cx,
+    {
         let requested_size = view.preferred_size();
         let canvas_size = canvas.logical_size;
         let availible_size = RectSize {
@@ -160,14 +163,19 @@ impl<'cx, UiState> UiContext<'cx, UiState> {
         queue: &wgpu::Queue,
         canvas: &CanvasView,
         bounds: Bounds<f32>,
-        view: &mut impl View<'cx, UiState>,
-    ) {
+        view: &mut dyn View<'cx, UiState>,
+    ) where
+        UiState: 'cx,
+    {
         view.preferred_size();
         view.apply_bounds(bounds);
         view.prepare_for_drawing(self, device, queue, canvas);
     }
 
-    pub fn draw_view(&self, render_pass: &mut wgpu::RenderPass, view: &impl View<'cx, UiState>) {
+    pub fn draw_view(&self, render_pass: &mut wgpu::RenderPass, view: &dyn View<'cx, UiState>)
+    where
+        UiState: 'cx,
+    {
         view.draw(self, render_pass);
     }
 }

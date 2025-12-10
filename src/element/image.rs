@@ -145,7 +145,7 @@ impl ImageElement {
 pub struct ImageRenderer<'cx> {
     pipeline: wgpu::RenderPipeline,
     bind_group_layout: wgpu::BindGroupLayout,
-    shader: &'cx wgpu::ShaderModule,
+    _shader: &'cx wgpu::ShaderModule,
     sampler: wgpu::Sampler,
 }
 
@@ -214,7 +214,7 @@ impl<'cx> ImageRenderer<'cx> {
         Ok(Self {
             bind_group_layout,
             pipeline,
-            shader,
+            _shader: shader,
             sampler,
         })
     }

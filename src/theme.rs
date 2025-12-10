@@ -1,3 +1,5 @@
+#![allow(dead_code)]
+
 use crate::{
     element::LineWidth,
     view::{ButtonStateStyle, ButtonStyle},

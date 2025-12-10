@@ -2,7 +2,7 @@ use cgmath::*;
 
 use crate::{
     element::{Bounds, LineWidth, RectElement, RectSize},
-    param_getters_setters,
+    property,
     utils::*,
     view::View,
     wgpu_utils::{CanvasView, Rgba},
@@ -49,7 +49,7 @@ impl RectView {
         }
     }
 
-    param_getters_setters! {
+    property! {
         vis: pub,
         param_ty: Rgba,
         param: fill_color,
@@ -59,7 +59,7 @@ impl RectView {
         param_mut_preamble: |self_: &mut Self| self_.needs_update = true,
     }
 
-    param_getters_setters! {
+    property! {
         vis: pub,
         param_ty: Rgba,
         param: line_color,
@@ -69,7 +69,7 @@ impl RectView {
         param_mut_preamble: |self_: &mut Self| self_.needs_update = true,
     }
 
-    param_getters_setters! {
+    property! {
         vis: pub,
         param_ty: LineWidth,
         param: line_width,
@@ -79,7 +79,7 @@ impl RectView {
         param_mut_preamble: |self_: &mut Self| self_.needs_update = true,
     }
 
-    param_getters_setters! {
+    property! {
         vis: pub,
         param_ty: RectSize<f32>,
         param: size,

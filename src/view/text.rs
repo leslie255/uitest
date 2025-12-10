@@ -4,7 +4,7 @@ use cgmath::*;
 
 use crate::{
     element::{Bounds, Font, RectSize, TextElement},
-    param_getters_setters,
+    property,
     view::{UiContext, View},
     wgpu_utils::Rgba,
 };
@@ -41,7 +41,7 @@ impl<'cx> TextView<'cx> {
         }
     }
 
-    param_getters_setters! {
+    property! {
         vis: pub,
         param_ty: f32,
         param: font_size,
@@ -51,7 +51,7 @@ impl<'cx> TextView<'cx> {
         param_mut_preamble: |self_: &mut Self| self_.needs_update = true,
     }
 
-    param_getters_setters! {
+    property! {
         vis: pub,
         param_ty: Rgba,
         param: fg_color,
@@ -61,7 +61,7 @@ impl<'cx> TextView<'cx> {
         param_mut_preamble: |self_: &mut Self| self_.needs_update = true,
     }
 
-    param_getters_setters! {
+    property! {
         vis: pub,
         param_ty: Rgba,
         param: bg_color,

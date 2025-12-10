@@ -114,6 +114,7 @@ impl<'cx, UiState> MouseEventRouter<'cx, UiState> {
         listeners.iter_mut().filter_map(Option::as_mut)
     }
 
+    #[allow(dead_code)]
     fn listeners_iter<'a>(
         listeners: &'a MutexGuard<Vec<Option<Listener<'cx, UiState>>>>,
     ) -> impl Iterator<Item = &'a Listener<'cx, UiState>> + use<'a, 'cx, UiState> {

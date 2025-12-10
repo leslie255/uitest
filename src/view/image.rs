@@ -1,6 +1,6 @@
 use crate::{
     element::{Bounds, ImageElement, RectSize, Texture2d},
-    param_getters_setters,
+    property,
     utils::*,
     view::{UiContext, View},
     wgpu_utils::CanvasView,
@@ -28,7 +28,7 @@ impl ImageView {
         }
     }
 
-    param_getters_setters! {
+    property! {
         vis: pub,
         param_ty: RectSize<f32>,
         param: size,

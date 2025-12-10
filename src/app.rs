@@ -17,8 +17,8 @@ use crate::{
     theme::{ButtonKind, Theme},
     utils::*,
     view::{
-        ButtonView, CenteredView, ImageView, RectView, StackPaddingType, StackView, UiContext,
-        view_lists::*,
+        ButtonView, ImageView, RectView, StackPaddingType, StackView, UiContext, View,
+        ViewExt as _, view_lists::*,
     },
     wgpu_utils::{Canvas as _, CanvasView, Srgb, WindowCanvas},
 };
@@ -102,17 +102,14 @@ fn init_wgpu() -> (wgpu::Instance, wgpu::Adapter, wgpu::Device, wgpu::Queue) {
 }
 
 struct UiState<'cx> {
-    resources: &'cx AppResources,
     device: wgpu::Device,
     queue: wgpu::Queue,
     window: Arc<Window>,
     window_canvas: WindowCanvas<'static>,
     ui_context: UiContext<'cx, Self>,
     background_rect_view: RectView,
-    counter: i64,
     #[allow(clippy::type_complexity)]
-    root_view:
-        CenteredView<StackView<'cx, ViewList3<Self, ButtonView<'cx, Self>, RectView, ImageView>>>,
+    root_view: Box<dyn View<'cx, Self>>,
 }
 
 impl<'cx> UiState<'cx> {
@@ -138,31 +135,37 @@ impl<'cx> UiState<'cx> {
         let texture = Texture2d::create(&device, &queue, image_ref);
 
         let mut self_ = Self {
-            resources,
             device,
             queue,
             window,
             window_canvas,
             background_rect_view: the_default::<RectView>()
                 .with_fill_color(Theme::DEFAULT.primary_background()),
-            counter: 0,
-            root_view: CenteredView::new(
-                RectSize::new(500., 350.),
-                StackView::horizontal(ViewList3::new(
-                    ButtonView::new(&ui_context)
-                        .with_size(RectSize::new(128., 64.))
-                        .with_style(Theme::DEFAULT.button_style(ButtonKind::Mundane).scaled(2.)),
-                    RectView::new(RectSize::new(100., 100.))
-                        .with_fill_color(Srgb::from_hex(0x008080))
-                        .with_line_color(Srgb::from_hex(0xFFFFFF))
-                        .with_line_width(2.),
-                    ImageView::new(RectSize::new(100., 100.)).with_texture(texture),
-                ))
-                .with_background_color(Srgb::from_hex(0x404040))
-                .with_fixed_padding(10.)
-                .with_padding_type(StackPaddingType::Omnipadded),
-            )
-            .with_size(RectSize::new(f32::INFINITY, f32::INFINITY)),
+            root_view: StackView::horizontal(ViewList4::new(
+                ButtonView::new(&ui_context)
+                    .with_size(RectSize::new(128., 64.))
+                    .with_style(Theme::DEFAULT.button_style(ButtonKind::Mundane).scaled(2.)),
+                RectView::new(RectSize::new(100., 100.))
+                    .with_fill_color(Srgb::from_hex(0x008080))
+                    .with_line_color(Srgb::from_hex(0xFFFFFF))
+                    .with_line_width(2.),
+                ImageView::new(RectSize::new(100., 100.)).with_texture(texture.clone()),
+                ImageView::new(RectSize::new(100., 100.)).with_texture(texture),
+            ))
+            .with_padding_type(StackPaddingType::Omnipadded)
+            .with_fixed_padding(10.)
+            .with_background_color(Srgb::from_hex(0xFF8080))
+            .into_ratio_container_view()
+            .with_ratio_top(0.2)
+            .with_ratio_left(0.2)
+            .with_background_color(Srgb::from_hex(0xC040FF))
+            .into_padded_view()
+            .with_padding_top(20.)
+            .with_padding_bottom(20.)
+            .with_padding_left(80.)
+            .with_padding_right(80.)
+            .with_background_color(Srgb::from_hex(0x8080FF))
+            .into_box_dyn_view(),
             ui_context,
         };
         self_.window_resized();
@@ -204,13 +207,14 @@ impl<'cx> UiState<'cx> {
             &self.queue,
             &canvas,
             point2(0., 0.),
-            &mut self.root_view,
+            self.root_view.as_mut(),
         );
 
         self.ui_context
             .draw_view(&mut render_pass, &self.background_rect_view);
 
-        self.ui_context.draw_view(&mut render_pass, &self.root_view);
+        self.ui_context
+            .draw_view(&mut render_pass, self.root_view.as_ref());
 
         drop(render_pass);
 

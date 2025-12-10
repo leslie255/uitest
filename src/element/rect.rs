@@ -305,7 +305,7 @@ impl From<[f32; 4]> for LineWidth {
 pub struct RectRenderer<'cx> {
     pipeline: wgpu::RenderPipeline,
     bind_group_layout: wgpu::BindGroupLayout,
-    shader: &'cx wgpu::ShaderModule,
+    _shader: &'cx wgpu::ShaderModule,
 }
 
 impl<'cx> RectRenderer<'cx> {
@@ -364,7 +364,7 @@ impl<'cx> RectRenderer<'cx> {
         Ok(Self {
             bind_group_layout,
             pipeline,
-            shader,
+            _shader: shader,
         })
     }
 

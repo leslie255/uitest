@@ -3,8 +3,8 @@ use cgmath::*;
 
 use crate::{
     AppResources,
-    resources::LoadResourceError,
     element::{Bounds, LineWidth},
+    resources::LoadResourceError,
     utils::*,
     wgpu_utils::{AsBindGroup, CanvasFormat, Rgba, UniformBuffer, Vertex, VertexBuffer},
 };
@@ -13,7 +13,7 @@ use crate::{
 pub struct InstancedRectRenderer<'cx> {
     pipeline: wgpu::RenderPipeline,
     bind_group_layout: wgpu::BindGroupLayout,
-    shader: &'cx wgpu::ShaderModule,
+    _shader: &'cx wgpu::ShaderModule,
 }
 
 impl<'cx> InstancedRectRenderer<'cx> {
@@ -72,7 +72,7 @@ impl<'cx> InstancedRectRenderer<'cx> {
         Ok(Self {
             bind_group_layout,
             pipeline,
-            shader,
+            _shader: shader,
         })
     }
 

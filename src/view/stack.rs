@@ -4,8 +4,8 @@ use cgmath::*;
 
 use crate::{
     element::{Bounds, RectSize},
-    param_getters_setters,
-    view::{Axis, Point2Ext as _, RectView, View, ViewList},
+    property,
+    view::{Axis, BoundsAxisExt as _, Point2AxisExt as _, RectSizeAxisExt as _, RectView, View, ViewList},
     wgpu_utils::{CanvasView, Rgba},
 };
 
@@ -54,7 +54,7 @@ impl<'cx, Subviews: ViewList<'cx>> StackView<'cx, Subviews> {
         Self::new(Axis::Vertical, subviews)
     }
 
-    param_getters_setters! {
+    property! {
         vis: pub,
         param_ty: Axis,
         param: axis,
@@ -64,7 +64,7 @@ impl<'cx, Subviews: ViewList<'cx>> StackView<'cx, Subviews> {
         param_mut_preamble: |_: &mut Self| (),
     }
 
-    param_getters_setters! {
+    property! {
         vis: pub,
         param_ty: StackPaddingType,
         param: padding_type,
@@ -74,7 +74,7 @@ impl<'cx, Subviews: ViewList<'cx>> StackView<'cx, Subviews> {
         param_mut_preamble: |_: &mut Self| (),
     }
 
-    param_getters_setters! {
+    property! {
         vis: pub,
         param_ty: Option<f32>,
         param: fixed_padding,
