@@ -5,7 +5,10 @@ use cgmath::*;
 use crate::{
     element::{Bounds, RectSize},
     property,
-    view::{Axis, BoundsAxisExt as _, Point2AxisExt as _, RectSizeAxisExt as _, RectView, View, ViewList},
+    view::{
+        Axis, BoundsAxisExt as _, Point2AxisExt as _, RectSizeAxisExt as _, RectView, View,
+        ViewList,
+    },
     wgpu_utils::{CanvasView, Rgba},
 };
 
@@ -213,6 +216,76 @@ impl<'cx, Subviews: ViewList<'cx>> View<'cx, Subviews::UiState> for StackView<'c
         {
             background_view.draw(ui_context, render_pass);
         }
+        self.subviews.for_each_subview(|subview| {
+            subview.draw(ui_context, render_pass);
+            ControlFlow::Continue
+        });
+    }
+}
+
+pub struct ZStackView<'cx, Subviews: ViewList<'cx>> {
+    subviews: Subviews,
+    subview_sizes: Vec<RectSize<f32>>,
+    _marker: PhantomData<&'cx ()>,
+}
+
+impl<'cx, Subviews: ViewList<'cx>> ZStackView<'cx, Subviews> {
+    pub fn new(subviews: Subviews) -> Self {
+        Self {
+            subviews,
+            subview_sizes: Vec::new(),
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<'cx, Subviews: ViewList<'cx>> View<'cx, Subviews::UiState> for ZStackView<'cx, Subviews> {
+    fn preferred_size(&mut self) -> RectSize<f32> {
+        let mut size = RectSize::new(0., 0.);
+        self.subview_sizes.clear();
+        self.subviews.for_each_subview_mut(|subview| {
+            let subview_size = subview.preferred_size();
+            size = size.max(subview_size);
+            self.subview_sizes.push(subview_size);
+            ControlFlow::Continue
+        });
+        size
+    }
+
+    fn apply_bounds(&mut self, bounds: Bounds<f32>) {
+        let mut subview_sizes = self.subview_sizes.iter();
+        self.subviews.for_each_subview_mut(|subview| {
+            let Some(requested_size) = subview_sizes.next() else {
+                log::warn!(
+                    "ZStackView::apply_bounds called without a prior ZStackView::preferred_size"
+                );
+                return ControlFlow::Break;
+            };
+            let subview_size = requested_size.min(bounds.size);
+            let padding = 0.5 * (bounds.size.as_vec() - subview_size.as_vec());
+            subview.apply_bounds(Bounds::new(bounds.origin + padding, subview_size));
+            ControlFlow::Continue
+        });
+    }
+
+    fn prepare_for_drawing(
+        &mut self,
+        ui_context: &UiContext<'cx, Subviews::UiState>,
+        device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        canvas: &CanvasView,
+    ) {
+        self.subviews.for_each_subview_mut(|subview| {
+            subview.prepare_for_drawing(ui_context, device, queue, canvas);
+            ControlFlow::Continue
+        });
+    }
+
+    fn draw(
+        &self,
+        ui_context: &UiContext<'cx, Subviews::UiState>,
+        render_pass: &mut wgpu::RenderPass,
+    ) {
         self.subviews.for_each_subview(|subview| {
             subview.draw(ui_context, render_pass);
             ControlFlow::Continue

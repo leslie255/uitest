@@ -17,9 +17,10 @@ use crate::{
     theme::{ButtonKind, Theme},
     utils::*,
     view::{
-        view_lists::*, ButtonView, ImageView, RectView, SpreadAxis, StackPaddingType, StackView, UiContext, View, ViewExt as _
+        ButtonView, ImageView, RectView, SpreadAxis, StackPaddingType, StackView, UiContext, View,
+        ViewExt as _, ZStackView, view_lists::*,
     },
-    wgpu_utils::{Canvas as _, CanvasView, Srgb, WindowCanvas},
+    wgpu_utils::{Canvas as _, CanvasView, Srgb, Srgba, WindowCanvas},
 };
 
 pub(crate) struct Application<'cx> {
@@ -141,15 +142,17 @@ impl<'cx> UiState<'cx> {
             background_rect_view: the_default::<RectView>()
                 .with_fill_color(Theme::DEFAULT.primary_background()),
             root_view: StackView::horizontal(ViewList1::new(
-                StackView::horizontal(ViewList4::new(
+                StackView::horizontal(ViewList3::new(
                     ButtonView::new(&ui_context)
                         .with_size(RectSize::new(128., 64.))
                         .with_style(Theme::DEFAULT.button_style(ButtonKind::Mundane).scaled(2.)),
-                    RectView::new(RectSize::new(100., 100.))
-                        .with_fill_color(Srgb::from_hex(0x008080))
-                        .with_line_color(Srgb::from_hex(0xFFFFFF))
-                        .with_line_width(2.),
-                    ImageView::new(RectSize::new(100., 100.)).with_texture(texture.clone()),
+                    ZStackView::new(ViewList2::new(
+                        ImageView::new(RectSize::new(100., 100.)).with_texture(texture.clone()),
+                        RectView::new(RectSize::new(100., 100.))
+                            .with_fill_color(Srgba::from_hex(0x80808080))
+                            .with_line_color(Srgb::from_hex(0xFFFFFF))
+                            .with_line_width(2.),
+                    )),
                     ImageView::new(RectSize::new(100., 100.)).with_texture(texture),
                 ))
                 .with_padding_type(StackPaddingType::Interpadded)
