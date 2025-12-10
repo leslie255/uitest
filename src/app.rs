@@ -18,7 +18,7 @@ use crate::{
     utils::*,
     view::{
         ButtonView, ImageView, RectView, SpreadAxis, StackPaddingType, StackView, UiContext, View,
-        ViewExt as _, ZStackView, view_lists::*,
+        ViewExt as _, ZStackAlignment, ZStackView, view_lists::*,
     },
     wgpu_utils::{Canvas as _, CanvasView, Srgb, Srgba, WindowCanvas},
 };
@@ -148,11 +148,13 @@ impl<'cx> UiState<'cx> {
                         .with_style(Theme::DEFAULT.button_style(ButtonKind::Mundane).scaled(2.)),
                     ZStackView::new(ViewList2::new(
                         ImageView::new(RectSize::new(100., 100.)).with_texture(texture.clone()),
-                        RectView::new(RectSize::new(100., 100.))
+                        RectView::new(RectSize::new(50., 50.))
                             .with_fill_color(Srgba::from_hex(0x80808080))
                             .with_line_color(Srgb::from_hex(0xFFFFFF))
                             .with_line_width(2.),
-                    )),
+                    ))
+                    .with_alignment_horizontal(ZStackAlignment::Leading)
+                    .with_alignment_vertical(ZStackAlignment::Leading),
                     ImageView::new(RectSize::new(100., 100.)).with_texture(texture),
                 ))
                 .with_padding_type(StackPaddingType::Interpadded)

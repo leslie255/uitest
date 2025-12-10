@@ -154,6 +154,13 @@ impl RectSize<f32> {
             height: self.height.max(other.height),
         }
     }
+
+    pub const fn scaled(self, scale_horizontal: f32, scale_vertical: f32) -> Self {
+        Self {
+            width: self.width * scale_horizontal,
+            height: self.height * scale_vertical,
+        }
+    }
 }
 
 #[derive(Debug, Clone, AsBindGroup)]

@@ -223,9 +223,30 @@ impl<'cx, Subviews: ViewList<'cx>> View<'cx, Subviews::UiState> for StackView<'c
     }
 }
 
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ZStackAlignment {
+    #[default]
+    Center,
+    Leading,
+    Trailing,
+}
+
+impl ZStackAlignment {
+    fn ratio(self) -> f32 {
+        match self {
+            ZStackAlignment::Center => 0.5,
+            ZStackAlignment::Leading => 0.0,
+            ZStackAlignment::Trailing => 1.0,
+        }
+    }
+}
+
 pub struct ZStackView<'cx, Subviews: ViewList<'cx>> {
     subviews: Subviews,
+    alignment_horizontal: ZStackAlignment,
+    alignment_vertical: ZStackAlignment,
     subview_sizes: Vec<RectSize<f32>>,
+    size: Option<RectSize<f32>>,
     _marker: PhantomData<&'cx ()>,
 }
 
@@ -233,9 +254,36 @@ impl<'cx, Subviews: ViewList<'cx>> ZStackView<'cx, Subviews> {
     pub fn new(subviews: Subviews) -> Self {
         Self {
             subviews,
+            alignment_horizontal: ZStackAlignment::Center,
+            alignment_vertical: ZStackAlignment::Center,
             subview_sizes: Vec::new(),
+            size: None,
             _marker: PhantomData,
         }
+    }
+
+    property! {
+        vis: pub,
+        param_ty: ZStackAlignment,
+        param: alignment_horizontal,
+        param_mut: alignment_horizontal_mut,
+        set_param: set_alignment_horizontal,
+        with_param: with_alignment_horizontal,
+        param_mut_preamble: |_: &mut Self| (),
+    }
+
+    property! {
+        vis: pub,
+        param_ty: ZStackAlignment,
+        param: alignment_vertical,
+        param_mut: alignment_vertical_mut,
+        set_param: set_alignment_vertical,
+        with_param: with_alignment_vertical,
+        param_mut_preamble: |_: &mut Self| (),
+    }
+
+    fn warn_mismatched_n_subview() {
+        log::warn!("ZStackView::apply_bounds internal error: mismatched number of subview_sizes and subviews");
     }
 }
 
@@ -249,21 +297,30 @@ impl<'cx, Subviews: ViewList<'cx>> View<'cx, Subviews::UiState> for ZStackView<'
             self.subview_sizes.push(subview_size);
             ControlFlow::Continue
         });
+        self.size = Some(size);
         size
     }
 
     fn apply_bounds(&mut self, bounds: Bounds<f32>) {
+        let size = self.size.unwrap_or_else(|| {
+            log::warn!(
+                "ZStackView::apply_bounds called without a prior ZStackView::preferred_size"
+            );
+            self.preferred_size()
+        });
+        let squeeze_horizontal = (bounds.width() / size.width).min(1.);
+        let squeeze_vertical = (bounds.height() / size.height).min(1.);
         let mut subview_sizes = self.subview_sizes.iter();
         self.subviews.for_each_subview_mut(|subview| {
-            let Some(requested_size) = subview_sizes.next() else {
-                log::warn!(
-                    "ZStackView::apply_bounds called without a prior ZStackView::preferred_size"
-                );
+            let Some(&subview_size) = subview_sizes.next() else {
+                Self::warn_mismatched_n_subview();
                 return ControlFlow::Break;
             };
-            let subview_size = requested_size.min(bounds.size);
-            let padding = 0.5 * (bounds.size.as_vec() - subview_size.as_vec());
-            subview.apply_bounds(Bounds::new(bounds.origin + padding, subview_size));
+            let padding = (bounds.size.as_vec() - subview_size.as_vec()).mul_element_wise(vec2(
+                self.alignment_horizontal.ratio(),
+                self.alignment_vertical.ratio(),
+            ));
+            subview.apply_bounds(Bounds::new(bounds.origin + padding, subview_size.scaled(squeeze_horizontal, squeeze_vertical)));
             ControlFlow::Continue
         });
     }
