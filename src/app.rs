@@ -153,8 +153,8 @@ impl<'cx> UiState<'cx> {
                             .with_line_color(Srgb::from_hex(0xFFFFFF))
                             .with_line_width(2.),
                     ))
-                    .with_alignment_horizontal(ZStackAlignment::Leading)
-                    .with_alignment_vertical(ZStackAlignment::Leading),
+                    .with_alignment_horizontal(ZStackAlignment::Ratio(0.2))
+                    .with_alignment_vertical(ZStackAlignment::Ratio(0.2)),
                     ImageView::new(RectSize::new(100., 100.)).with_texture(texture),
                 ))
                 .with_padding_type(StackPaddingType::Interpadded)

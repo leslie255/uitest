@@ -285,7 +285,9 @@ impl<'cx, Subviews: ViewList<'cx>> ZStackView<'cx, Subviews> {
     }
 
     fn warn_mismatched_n_subview() {
-        log::warn!("ZStackView::apply_bounds internal error: mismatched number of subview_sizes and subviews");
+        log::warn!(
+            "ZStackView::apply_bounds internal error: mismatched number of subview_sizes and subviews"
+        );
     }
 }
 
@@ -319,10 +321,13 @@ impl<'cx, Subviews: ViewList<'cx>> View<'cx, Subviews::UiState> for ZStackView<'
                 return ControlFlow::Break;
             };
             let padding = (bounds.size.as_vec() - subview_size.as_vec()).mul_element_wise(vec2(
-                self.alignment_horizontal.ratio(),
-                self.alignment_vertical.ratio(),
+                self.alignment_horizontal.ratio() * squeeze_horizontal,
+                self.alignment_vertical.ratio() * squeeze_vertical,
             ));
-            subview.apply_bounds(Bounds::new(bounds.origin + padding, subview_size.scaled(squeeze_horizontal, squeeze_vertical)));
+            subview.apply_bounds(Bounds::new(
+                bounds.origin + padding,
+                subview_size.scaled(squeeze_horizontal, squeeze_vertical),
+            ));
             ControlFlow::Continue
         });
     }
