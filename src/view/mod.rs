@@ -94,12 +94,14 @@ macro_rules! impl_view_list {
     ($cx:lifetime , $($fields:tt)*) => {
         fn for_each_subview(
             &self,
+            #[allow(unused_variables, unused_mut)]
             mut visitor: impl FnMut(&dyn $crate::view::View<$cx, Self::UiState>) -> $crate::view::ControlFlow,
         ) {
             $crate::impl_view_list_ref!(self, visitor, $($fields)*);
         }
         fn for_each_subview_mut(
             &mut self,
+            #[allow(unused_variables, unused_mut)]
             mut visitor: impl FnMut(&mut dyn $crate::view::View<$cx, Self::UiState>) -> $crate::view::ControlFlow,
         ) {
             $crate::impl_view_list_mut!(self, visitor, $($fields)*);

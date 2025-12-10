@@ -57,19 +57,13 @@ pub trait ViewExt<'cx, UiState: 'cx>: View<'cx, UiState> + Sized {
     fn into_spread_view(self, axis: SpreadAxis) -> SpreadView<Self> {
         SpreadView::new(axis, self)
     }
-    fn into_spread_view_horizontal(self) -> SpreadView<Self> {
-        SpreadView::horizontal(self)
-    }
-    fn into_spread_view_vertical(self) -> SpreadView<Self> {
-        SpreadView::vertical(self)
-    }
 
     fn into_padded_view(self) -> PaddedView<Self> {
         PaddedView::new(self)
     }
 
-    fn into_ratio_container_view(self) -> RatioContainerView<Self> {
-        RatioContainerView::new(RectSize::new(f32::INFINITY, f32::INFINITY), self)
+    fn into_ratio_padded_view(self) -> RatioPaddedView<Self> {
+        RatioPaddedView::new(self)
     }
 }
 
@@ -98,7 +92,6 @@ where
     Subview: View<'cx, UiState>,
 {
     fn preferred_size(&mut self) -> RectSize<f32> {
-        log::debug!("[SpreadView::preferred_size]");
         let subview_size = self.subview.preferred_size();
         match self.axis {
             SpreadAxis::Horizontal => RectSize::new(f32::INFINITY, subview_size.height),
@@ -342,8 +335,8 @@ where
 /// - `ratio_top`: value of `padding_top / (padding_top + padding_bottom)`
 /// - `ratio_left`: value of `padding_left / (padding_left + padding_right)`
 #[derive(Debug, AsRef, AsMut, Deref, DerefMut)]
-pub struct RatioContainerView<Subview> {
-    size: RectSize<f32>,
+pub struct RatioPaddedView<Subview> {
+    size: Option<RectSize<f32>>,
     ratio_left: f32,
     ratio_top: f32,
     #[as_ref]
@@ -355,10 +348,10 @@ pub struct RatioContainerView<Subview> {
     background_rect: RectView,
 }
 
-impl<Subview> RatioContainerView<Subview> {
-    pub fn new(size: RectSize<f32>, subview: Subview) -> Self {
+impl<Subview> RatioPaddedView<Subview> {
+    pub fn new(subview: Subview) -> Self {
         Self {
-            size,
+            size: None,
             ratio_left: 0.5,
             ratio_top: 0.5,
             subview,
@@ -370,7 +363,7 @@ impl<Subview> RatioContainerView<Subview> {
 
     /// Take as much space as possible.
     pub fn spread(subview: Subview) -> Self {
-        Self::new(RectSize::new(f32::INFINITY, f32::INFINITY), subview)
+        Self::new(subview).with_size(RectSize::new(f32::INFINITY, f32::INFINITY))
     }
 
     pub fn into_subview(self) -> Subview {
@@ -387,7 +380,7 @@ impl<Subview> RatioContainerView<Subview> {
 
     property! {
         vis: pub,
-        param_ty: RectSize<f32>,
+        param_ty: Option<RectSize<f32>>,
         param: size,
         param_mut: size_mut,
         set_param: set_size,
@@ -446,14 +439,14 @@ impl<Subview> RatioContainerView<Subview> {
     }
 }
 
-impl<'cx, UiState, Subview> View<'cx, UiState> for RatioContainerView<Subview>
+impl<'cx, UiState, Subview> View<'cx, UiState> for RatioPaddedView<Subview>
 where
     Subview: View<'cx, UiState>,
 {
     fn preferred_size(&mut self) -> RectSize<f32> {
         let subview_size = self.subview.preferred_size();
         self.subview_size = Some(subview_size);
-        self.size
+        self.size.unwrap_or(subview_size)
     }
 
     fn apply_bounds(&mut self, bounds: Bounds<f32>) {

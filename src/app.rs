@@ -17,8 +17,7 @@ use crate::{
     theme::{ButtonKind, Theme},
     utils::*,
     view::{
-        ButtonView, ImageView, RectView, StackPaddingType, StackView, UiContext, View,
-        ViewExt as _, view_lists::*,
+        view_lists::*, ButtonView, ImageView, RectView, SpreadAxis, StackPaddingType, StackView, UiContext, View, ViewExt as _
     },
     wgpu_utils::{Canvas as _, CanvasView, Srgb, WindowCanvas},
 };
@@ -141,24 +140,28 @@ impl<'cx> UiState<'cx> {
             window_canvas,
             background_rect_view: the_default::<RectView>()
                 .with_fill_color(Theme::DEFAULT.primary_background()),
-            root_view: StackView::horizontal(ViewList4::new(
-                ButtonView::new(&ui_context)
-                    .with_size(RectSize::new(128., 64.))
-                    .with_style(Theme::DEFAULT.button_style(ButtonKind::Mundane).scaled(2.)),
-                RectView::new(RectSize::new(100., 100.))
-                    .with_fill_color(Srgb::from_hex(0x008080))
-                    .with_line_color(Srgb::from_hex(0xFFFFFF))
-                    .with_line_width(2.),
-                ImageView::new(RectSize::new(100., 100.)).with_texture(texture.clone()),
-                ImageView::new(RectSize::new(100., 100.)).with_texture(texture),
+            root_view: StackView::horizontal(ViewList1::new(
+                StackView::horizontal(ViewList4::new(
+                    ButtonView::new(&ui_context)
+                        .with_size(RectSize::new(128., 64.))
+                        .with_style(Theme::DEFAULT.button_style(ButtonKind::Mundane).scaled(2.)),
+                    RectView::new(RectSize::new(100., 100.))
+                        .with_fill_color(Srgb::from_hex(0x008080))
+                        .with_line_color(Srgb::from_hex(0xFFFFFF))
+                        .with_line_width(2.),
+                    ImageView::new(RectSize::new(100., 100.)).with_texture(texture.clone()),
+                    ImageView::new(RectSize::new(100., 100.)).with_texture(texture),
+                ))
+                .with_padding_type(StackPaddingType::Interpadded)
+                .with_fixed_padding(10.),
             ))
             .with_padding_type(StackPaddingType::Omnipadded)
-            .with_fixed_padding(10.)
             .with_background_color(Srgb::from_hex(0xFF8080))
-            .into_ratio_container_view()
+            .into_ratio_padded_view()
             .with_ratio_top(0.2)
             .with_ratio_left(0.2)
             .with_background_color(Srgb::from_hex(0xC040FF))
+            .into_spread_view(SpreadAxis::Both)
             .into_padded_view()
             .with_padding_top(20.)
             .with_padding_bottom(20.)
