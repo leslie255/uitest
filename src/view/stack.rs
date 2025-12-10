@@ -26,6 +26,7 @@ pub struct StackView<'cx, Subviews: ViewList<'cx>> {
     padding_type: StackPaddingType,
     fixed_padding: Option<f32>,
     subview_sizes: Vec<RectSize<f32>>,
+    size: RectSize<f32>,
     subview_length_alpha_total: f32,
     _marker: PhantomData<&'cx ()>,
 }
@@ -39,6 +40,7 @@ impl<'cx, Subviews: ViewList<'cx>> StackView<'cx, Subviews> {
             padding_type: StackPaddingType::Interpadded,
             fixed_padding: None,
             subview_sizes: Vec::new(),
+            size: RectSize::new(0., 0.),
             subview_length_alpha_total: 0.0f32,
             _marker: PhantomData,
         }
@@ -133,13 +135,15 @@ impl<'cx, Subviews: ViewList<'cx>> View<'cx, Subviews::UiState> for StackView<'c
         self.subview_length_alpha_total = length_alpha;
         let padding_total = (n_paddings as f32) * self.fixed_padding.unwrap_or(0.);
         length_alpha += padding_total;
-        RectSize::new_on_axis(self.axis, length_alpha, length_beta)
+        self.size = RectSize::new_on_axis(self.axis, length_alpha, length_beta);
+        self.size
     }
 
     fn apply_bounds(&mut self, bounds: Bounds<f32>) {
         if let Some(background_view) = self.background_view.as_mut() {
             background_view.apply_bounds_(bounds);
         }
+        let squeeze = (bounds.length_alpha(self.axis) / self.size.length_alpha(self.axis)).min(1.);
         let mut subview_sizes = self.subview_sizes.iter();
         let n_subviews = self.subview_sizes.len();
         let n_paddings = match self.padding_type {
@@ -148,20 +152,20 @@ impl<'cx, Subviews: ViewList<'cx>> View<'cx, Subviews::UiState> for StackView<'c
         };
         let padding = match self.fixed_padding {
             Some(fixed_padding) => fixed_padding,
-            None => {
-                (bounds.length_alpha(self.axis) - self.subview_length_alpha_total)
-                    / (n_paddings as f32)
-            }
-        };
+            None => ((bounds.length_alpha(self.axis) - self.subview_length_alpha_total)
+                / (n_paddings as f32))
+                .max(0.),
+        } * squeeze;
         let mut offset_alpha = match self.padding_type {
             StackPaddingType::Interpadded => bounds.alpha_min(self.axis) + 0.,
             StackPaddingType::Omnipadded => bounds.alpha_min(self.axis) + padding,
         };
         self.subviews.for_each_subview_mut(|subview| {
-            let Some(&requested_size) = subview_sizes.next() else {
+            let Some(&(mut requested_size)) = subview_sizes.next() else {
                 Self::warn_n_subviews_changed();
                 return ControlFlow::Break;
             };
+            *requested_size.length_alpha_mut(self.axis) *= squeeze;
             let remaining_size = RectSize::new_on_axis(
                 self.axis, //
                 bounds.length_alpha(self.axis) - offset_alpha + bounds.alpha_min(self.axis),

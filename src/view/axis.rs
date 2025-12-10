@@ -12,6 +12,8 @@ pub(crate) trait Point2Ext<T: Copy> {
     fn new_on_axis(axis: Axis, alpha: T, beta: T) -> Self;
     fn alpha(self, axis: Axis) -> T;
     fn beta(self, axis: Axis) -> T;
+    fn alpha_mut(&mut self, axis: Axis) -> &mut T;
+    fn beta_mut(&mut self, axis: Axis) -> &mut T;
 }
 
 impl<T: Copy> Point2Ext<T> for Point2<T> {
@@ -33,6 +35,20 @@ impl<T: Copy> Point2Ext<T> for Point2<T> {
         match axis {
             Axis::Horizontal => self.y,
             Axis::Vertical => self.x,
+        }
+    }
+
+    fn alpha_mut(&mut self, axis: Axis) -> &mut T {
+        match axis {
+            Axis::Horizontal => &mut self.x,
+            Axis::Vertical => &mut self.y,
+        }
+    }
+
+    fn beta_mut(&mut self, axis: Axis) -> &mut T {
+        match axis {
+            Axis::Horizontal => &mut self.y,
+            Axis::Vertical => &mut self.x,
         }
     }
 }
@@ -58,6 +74,20 @@ impl<T: Copy> RectSize<T> {
             Axis::Vertical => self.width,
         }
     }
+
+    pub(crate) fn length_alpha_mut(&mut self, axis: Axis) -> &mut T {
+        match axis {
+            Axis::Horizontal => &mut self.width,
+            Axis::Vertical => &mut self.height,
+        }
+    }
+
+    pub(crate) fn length_beta_mut(&mut self, axis: Axis) -> &mut T {
+        match axis {
+            Axis::Horizontal => &mut self.height,
+            Axis::Vertical => &mut self.width,
+        }
+    }
 }
 
 impl<T: Copy> Bounds<T> {
@@ -75,12 +105,34 @@ impl<T: Copy> Bounds<T> {
         }
     }
 
+    pub(crate) fn alpha_min_mut(&mut self, axis: Axis) -> &mut T {
+        match axis {
+            Axis::Horizontal => &mut self.origin.x,
+            Axis::Vertical => &mut self.origin.y,
+        }
+    }
+
+    pub(crate) fn beta_min_mut(&mut self, axis: Axis) -> &mut T {
+        match axis {
+            Axis::Horizontal => &mut self.origin.y,
+            Axis::Vertical => &mut self.origin.x,
+        }
+    }
+
     pub(crate) fn length_alpha(self, axis: Axis) -> T {
         self.size.length_alpha(axis)
     }
 
     pub(crate) fn length_beta(self, axis: Axis) -> T {
         self.size.length_beta(axis)
+    }
+
+    pub(crate) fn length_alpha_mut(&mut self, axis: Axis) -> &mut T {
+        self.size.length_alpha_mut(axis)
+    }
+
+    pub(crate) fn length_beta_mut(&mut self, axis: Axis) -> &mut T {
+        self.size.length_beta_mut(axis)
     }
 }
 
