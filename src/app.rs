@@ -159,9 +159,10 @@ impl<'cx> UiState<'cx> {
                     ImageView::new(RectSize::new(100., 100.)).with_texture(texture),
                 ))
                 .with_background_color(Srgb::from_hex(0x404040))
-                .with_padding_type(StackPaddingType::Omnipadded),
+                .with_fixed_padding(10.)
+                .with_padding_type(StackPaddingType::Interpadded),
             )
-            .with_size(RectSize::new(500., 350.)),
+            .with_size(RectSize::new(f32::INFINITY, f32::INFINITY)),
             ui_context,
         };
         self_.window_resized();

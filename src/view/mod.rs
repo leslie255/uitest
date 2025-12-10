@@ -3,7 +3,7 @@ use crate::{
     wgpu_utils::CanvasView,
 };
 
-mod abstract_views;
+mod util_views;
 mod axis;
 mod button;
 mod image;
@@ -12,7 +12,7 @@ mod stack;
 mod text;
 mod ui_context;
 
-pub use abstract_views::*;
+pub use util_views::*;
 pub use axis::*;
 pub use button::*;
 pub use image::*;

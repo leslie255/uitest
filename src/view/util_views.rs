@@ -154,11 +154,16 @@ pub struct CenteredView<Subview> {
     #[deref]
     #[deref_mut]
     subview: Subview,
+    subview_size: Option<RectSize<f32>>,
 }
 
 impl<Subview> CenteredView<Subview> {
     pub const fn new(size: RectSize<f32>, subview: Subview) -> Self {
-        Self { size, subview }
+        Self {
+            size,
+            subview,
+            subview_size: None,
+        }
     }
 
     param_getters_setters! {
@@ -189,11 +194,27 @@ where
     Subview: View<'cx, UiState>,
 {
     fn preferred_size(&mut self) -> RectSize<f32> {
-        self.subview.preferred_size().max(self.size)
+        let subview_size = self.subview.preferred_size();
+        self.subview_size = Some(subview_size);
+        self.size
     }
 
     fn apply_bounds(&mut self, bounds: Bounds<f32>) {
-        self.subview.apply_bounds(bounds)
+        match self.subview_size {
+            Some(subview_size) => {
+                let padding_left = 0.5 * (bounds.width() - subview_size.width).max(0.);
+                let padding_top = 0.5 * (bounds.height() - subview_size.height).max(0.);
+                self.subview.apply_bounds(Bounds::from_scalars(
+                    bounds.x_min() + padding_left,
+                    bounds.y_min() + padding_top,
+                    bounds.width() - 2. * padding_left,
+                    bounds.height() - 2. * padding_top,
+                ))
+            }
+            None => log::warn!(
+                "CenteredView::apply_bounds called without prior CenteredView::preferred_size"
+            ),
+        }
     }
 
     fn prepare_for_drawing(

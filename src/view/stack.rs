@@ -122,7 +122,7 @@ impl<'cx, Subviews: ViewList<'cx>> View<'cx, Subviews::UiState> for StackView<'c
             let subview_size = subview.preferred_size();
             self.subview_sizes.push(subview_size);
             length_alpha += subview_size.length_alpha(self.axis);
-            length_beta = length_beta.max(subview_size.length_alpha(self.axis));
+            length_beta = length_beta.max(subview_size.length_beta(self.axis));
             ControlFlow::Continue
         });
         let n_subviews = self.subview_sizes.len();
