@@ -14,9 +14,8 @@ use cgmath::*;
 use winit::event::MouseButton;
 
 use crate::{
-    CanvasRef, ListenerHandle, MouseEvent, MouseEventKind, MouseEventListener, RectView,
-    RenderPass, Srgb, Srgba, TextView, UiContext, View,
-    Bounds, LineWidth, RectSize,
+    Bounds, CanvasRef, LineWidth, ListenerHandle, MouseEvent, MouseEventKind, MouseEventListener,
+    RectSize, RectView, RenderPass, Srgb, Srgba, TextView, UiContext, View,
     utils::AtomicBoolExt as _,
 };
 
@@ -298,7 +297,7 @@ impl<'cx, UiState: 'cx> View<'cx, UiState> for ButtonView<'cx, UiState> {
         if self.listener_handle.is_none() {
             self.listener_handle = Some(
                 ui_context
-                    .mouse_event_router()
+                    .event_router()
                     .register_listener(self.rect_view.bounds(), self.dispatch.clone()),
             );
         }

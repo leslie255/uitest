@@ -43,7 +43,7 @@ pub struct UiContext<'cx, UiState> {
     instanced_rect_renderer: InstancedRectRenderer<'cx>,
     text_renderer: TextRenderer<'cx>,
     image_renderer: ImageRenderer<'cx>,
-    mouse_event_router: Arc<EventRouter<'cx, UiState>>,
+    event_router: Arc<EventRouter<'cx, UiState>>,
 }
 
 impl<'cx, UiState> UiContext<'cx, UiState> {
@@ -70,7 +70,7 @@ impl<'cx, UiState> UiContext<'cx, UiState> {
         queue: wgpu::Queue,
         resources: &'cx AppResources,
         canvas_format: CanvasFormat,
-        mouse_event_router: Arc<EventRouter<'cx, UiState>>,
+        event_router: Arc<EventRouter<'cx, UiState>>,
     ) -> Result<Self, UiContextCreationError> {
         macro_rules! try_ {
             ($stage:expr, $x:expr $(,)?) => {
@@ -105,7 +105,7 @@ impl<'cx, UiState> UiContext<'cx, UiState> {
             instanced_rect_renderer,
             text_renderer,
             image_renderer,
-            mouse_event_router,
+            event_router,
         })
     }
 }
@@ -176,8 +176,8 @@ impl<'cx, UiState> UiContext<'cx, UiState> {
         &self.image_renderer
     }
 
-    pub fn mouse_event_router(&self) -> &Arc<EventRouter<'cx, UiState>> {
-        &self.mouse_event_router
+    pub fn event_router(&self) -> &Arc<EventRouter<'cx, UiState>> {
+        &self.event_router
     }
 
     pub fn prepare_view(
