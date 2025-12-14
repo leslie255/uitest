@@ -8,77 +8,13 @@ use winit::{
     window::{Window, WindowAttributes, WindowId},
 };
 
-use crate::theme::{ButtonKind, Theme};
+use crate::theme::Theme;
 
 use muilib::{
-    AppResources, Bounds, ButtonView, Canvas as _, CanvasRef, ContainerPadding, EventRouter,
-    ImageView, RectSize, RectView, Rgba, Srgb, Srgba, StackAlignment, StackView, TextView,
+    AppResources, Bounds, Canvas as _, CanvasRef, ContainerPadding, EventRouter, ImageView,
+    LazyApplicationHandler, RectSize, RectView, Rgba, Srgb, Srgba, StackAlignment, StackView,
     UiContext, View, ViewExt as _, WindowCanvas, ZStackView, view_lists::*,
 };
-
-pub(crate) struct Application<'cx> {
-    resources: &'cx AppResources,
-    mouse_event_router: Arc<EventRouter<'cx, UiState<'cx>>>,
-    window: Option<Arc<Window>>,
-    ui: Option<UiState<'cx>>,
-}
-
-impl<'cx> Application<'cx> {
-    pub fn new(resources: &'cx AppResources) -> Self {
-        Self {
-            resources,
-            mouse_event_router: Arc::new(EventRouter::new(Bounds::default())),
-            window: None,
-            ui: None,
-        }
-    }
-}
-
-impl<'cx> ApplicationHandler for Application<'cx> {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        match &mut self.ui {
-            Some(_) => (),
-            ui @ None => {
-                let window = event_loop
-                    .create_window(WindowAttributes::default().with_title("UI Test"))
-                    .unwrap();
-                let window = Arc::new(window);
-                self.window = Some(Arc::clone(&window));
-                *ui = Some(UiState::create(
-                    self.resources,
-                    window,
-                    self.mouse_event_router.clone(),
-                ));
-            }
-        }
-    }
-
-    fn window_event(
-        &mut self,
-        event_loop: &ActiveEventLoop,
-        window_id: WindowId,
-        event: WindowEvent,
-    ) {
-        let Some(window) = self.window.as_ref() else {
-            return;
-        };
-        if window_id != window.id() {
-            return;
-        }
-        if let WindowEvent::Resized(size_physical) = event {
-            let size_logical = size_physical.to_logical::<f32>(window.scale_factor());
-            let bounds = Bounds::from_scalars(0., 0., size_logical.width, size_logical.height);
-            self.mouse_event_router.set_bounds(bounds);
-        }
-        if let Some(ui) = self.ui.as_mut() {
-            let should_redraw = self.mouse_event_router.window_event(&event, ui);
-            if should_redraw {
-                window.request_redraw();
-            }
-            ui.window_event(event_loop, window_id, event);
-        }
-    }
-}
 
 trait OverlayFilter<'cx, UiState: 'cx>: View<'cx, UiState> + Sized {
     fn overlay_filter(self, color: impl Into<Rgba>) -> impl View<'cx, UiState> {
@@ -94,14 +30,33 @@ trait OverlayFilter<'cx, UiState: 'cx>: View<'cx, UiState> + Sized {
 
 impl<'cx, UiState: 'cx, T: View<'cx, UiState>> OverlayFilter<'cx, UiState> for T {}
 
-struct UiState<'cx> {
+pub struct App<'cx> {
     window: Arc<Window>,
     window_canvas: WindowCanvas<'static>,
     ui_context: UiContext<'cx, Self>,
     root_view: Box<dyn View<'cx, Self>>,
 }
 
-impl<'cx> UiState<'cx> {
+impl<'cx> LazyApplicationHandler<&'cx AppResources> for App<'cx> {
+    fn new(resources: &'cx AppResources, event_loop: &ActiveEventLoop) -> Self {
+        let window = Arc::new(
+            event_loop
+                .create_window(WindowAttributes::default().with_title("UI Test"))
+                .unwrap(),
+        );
+        let window_size_physical = window.inner_size();
+        let window_size_logical = window_size_physical.to_logical::<f32>(window.scale_factor());
+        let event_router = Arc::new(EventRouter::new(Bounds::from_scalars(
+            0.,
+            0.,
+            window_size_logical.width,
+            window_size_logical.height,
+        )));
+        Self::create(resources, window, event_router)
+    }
+}
+
+impl<'cx> App<'cx> {
     pub fn create(
         resources: &'cx AppResources,
         window: Arc<Window>,
@@ -178,6 +133,19 @@ impl<'cx> UiState<'cx> {
             .draw_view(&mut render_pass, self.root_view.as_ref());
     }
 
+    fn window_resized(&mut self) {
+        self.window_canvas.reconfigure_for_size(
+            self.ui_context.wgpu_device(),
+            self.window.inner_size(),
+            self.window.scale_factor(),
+            None,
+        );
+    }
+}
+
+impl<'cx> ApplicationHandler for App<'cx> {
+    fn resumed(&mut self, _event_loop: &ActiveEventLoop) {}
+
     fn window_event(
         &mut self,
         event_loop: &ActiveEventLoop,
@@ -205,14 +173,5 @@ impl<'cx> UiState<'cx> {
             }
             _ => (),
         }
-    }
-
-    fn window_resized(&mut self) {
-        self.window_canvas.reconfigure_for_size(
-            self.ui_context.wgpu_device(),
-            self.window.inner_size(),
-            self.window.scale_factor(),
-            None,
-        );
     }
 }

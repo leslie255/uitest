@@ -2,12 +2,12 @@ use std::path::PathBuf;
 
 use winit::event_loop::EventLoop;
 
-use muilib::AppResources;
+use muilib::{AppResources, EventLoopExt as _};
 
-use crate::app::Application;
+use crate::app::App;
 
-mod theme;
 mod app;
+mod theme;
 
 fn main() {
     env_logger::init();
@@ -16,6 +16,6 @@ fn main() {
     let resources = AppResources::new(PathBuf::from("res/"));
     let event_loop = EventLoop::builder().build().unwrap();
     event_loop
-        .run_app(&mut Application::new(&resources))
+        .run_lazy_initialized_app::<App, _>(&resources)
         .unwrap();
 }
