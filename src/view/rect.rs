@@ -102,6 +102,7 @@ impl<'cx, UiState: 'cx> View<'cx, UiState> for RectView {
     }
 
     fn apply_bounds(&mut self, bounds: Bounds<f32>) {
+        dbg!(bounds);
         self.apply_bounds_(bounds);
     }
 

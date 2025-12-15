@@ -1,3 +1,5 @@
+use cgmath::*;
+
 use crate::{Bounds, CanvasRef, RectSize, RenderPass, UiContext, View};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -126,7 +128,7 @@ impl<'view, Subview> Container<'view, Subview> {
         self
     }
 
-    fn padding(
+    fn padding_length(
         padding_leading: ContainerPadding,
         padding_trailing: ContainerPadding,
         spread_ratio: f32,
@@ -164,14 +166,14 @@ where
 {
     fn preferred_size(&mut self) -> RectSize<f32> {
         let subview_size = self.override_size.unwrap_or(self.subview_size);
-        let (padding_left, padding_right) = Self::padding(
+        let (padding_left, padding_right) = Self::padding_length(
             self.padding_left,
             self.padding_right,
             self.spread_ratio_horizontal,
             subview_size.width,
             f32::INFINITY,
         );
-        let (padding_top, padding_bottom) = Self::padding(
+        let (padding_top, padding_bottom) = Self::padding_length(
             self.padding_top,
             self.padding_bottom,
             self.spread_ratio_vertical,
@@ -196,39 +198,39 @@ where
         }
         .max(RectSize::new(0., 0.));
         let subview_size = requested_size.min(max_size);
-        let (padding_left, padding_right) = Self::padding(
+        let (padding_left, padding_right) = Self::padding_length(
             self.padding_left,
             self.padding_right,
             self.spread_ratio_horizontal,
             subview_size.width,
             (bounds.width() - subview_size.width).max(0.),
         );
-        let (padding_top, padding_bottom) = Self::padding(
+        let (padding_top, padding_bottom) = Self::padding_length(
             self.padding_top,
             self.padding_bottom,
             self.spread_ratio_vertical,
             subview_size.height,
             (bounds.height() - subview_size.height).max(0.),
         );
-        let padded_size = RectSize {
+        let outer_size = RectSize {
             width: padding_left + subview_size.width + padding_right,
             height: padding_top + subview_size.height + padding_bottom,
         };
-        let shrink_horizontal = (bounds.width() / padded_size.width).min(1.);
-        let shrink_vertical = (bounds.height() / padded_size.height).min(1.);
-        let mut subview_bounds = Bounds::from_scalars(
-            bounds.x_min() + padding_left,
-            bounds.y_min() + padding_top,
-            subview_size.width * shrink_horizontal,
-            subview_size.height * shrink_vertical,
+        let shrink_horizontal = (bounds.width() / outer_size.width).min(1.);
+        let shrink_vertical = (bounds.height() / outer_size.height).min(1.);
+        let mut subview_bounds = Bounds::new(
+            bounds.origin + vec2(padding_left, padding_top),
+            subview_size.scaled(shrink_horizontal, shrink_vertical),
         );
+        // Since shrinking currently does not work properly for `RatioOfViewSize`, this serve as a
+        // safeguard.
         if subview_bounds.x_max() > bounds.x_max() {
             subview_bounds.size.width = (bounds.x_max() - subview_bounds.x_min()).max(0.);
         }
         if subview_bounds.y_max() > bounds.y_max() {
             subview_bounds.size.height = (bounds.y_max() - subview_bounds.y_min()).max(0.);
         }
-        self.subview.apply_bounds(subview_bounds);
+        self.subview.apply_bounds(dbg!(subview_bounds));
     }
 
     fn prepare_for_drawing(&mut self, ui_context: &UiContext<'cx, UiState>, canvas: &CanvasRef) {

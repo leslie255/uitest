@@ -1,6 +1,4 @@
-use crate::{
-    Axis, Bounds, CanvasRef, RectSize, RenderPass, UiContext, View, axis_utils::*,
-};
+use crate::{Axis, Bounds, CanvasRef, RectSize, RenderPass, UiContext, View, axis_utils::*};
 
 use bumpalo::{Bump, collections::Vec as BumpVec};
 use cgmath::*;
@@ -108,6 +106,8 @@ pub(crate) struct Subview<'a, 'cx, UiState> {
 }
 
 pub struct Stack<'pass, 'views, 'cx, UiState> {
+    // For the lingo "a", "b", "alpha", "beta", see `axis_utils`.
+    //
     axis: Axis,
     alignment_alpha: StackAlignment,
     alignment_beta: StackAlignment,
@@ -116,17 +116,15 @@ pub struct Stack<'pass, 'views, 'cx, UiState> {
     shrink_together: bool,
     subviews: BumpVec<'pass, Subview<'views, 'cx, UiState>>,
     /// Sum of the alphas of subviews.
-    ///
-    /// For the lingo "a", "b", "alpha", "beta", see `axis_utils`.
     alpha_sum: f32,
+    /// Sum of alphas of subviews, excluding those who has infinite alphas.
+    alpha_sum_finite: f32,
     /// Max among the betas of subviews.
-    ///
-    /// For the lingo "a", "b", "alpha", "beta", see `axis_utils`.
     beta_max: f32,
     /// Max among the betas of subviews, excluding those who has infinite betas.
-    ///
-    /// For the lingo "a", "b", "alpha", "beta", see `axis_utils`.
     beta_max_finite: f32,
+    /// Number of subviews who has infinite alphas.
+    n_infinite_alphas: usize,
 }
 
 impl<'pass, 'views, 'cx, UiState> Stack<'pass, 'views, 'cx, UiState> {
@@ -140,17 +138,25 @@ impl<'pass, 'views, 'cx, UiState> Stack<'pass, 'views, 'cx, UiState> {
             shrink_together: false,
             subviews: BumpVec::new_in(bump),
             alpha_sum: 0.,
+            alpha_sum_finite: 0.,
             beta_max: 0.,
             beta_max_finite: 0.,
+            n_infinite_alphas: 0,
         }
     }
 
     pub(crate) fn subview(&mut self, subview: &'views mut (dyn View<'cx, UiState> + 'views)) {
         // For the lingo "a", "b", "alpha", "beta", see `axis_utils`.
         let subview_size = subview.preferred_size();
-        self.alpha_sum += subview_size.alpha(self.axis);
+        let subview_alpha = subview_size.alpha(self.axis);
         let subview_beta = subview_size.beta(self.axis);
+        self.alpha_sum += subview_size.alpha(self.axis);
         self.beta_max = self.beta_max.max(subview_beta);
+        if subview_alpha.is_finite() {
+            self.alpha_sum_finite += subview_alpha;
+        } else {
+            self.n_infinite_alphas += 1;
+        }
         if subview_beta.is_finite() {
             self.beta_max_finite = self.beta_max_finite.max(subview_beta);
         }
@@ -183,21 +189,30 @@ impl<'pass, 'views, 'cx, UiState> View<'cx, UiState> for Stack<'pass, 'views, 'c
 
         let n_paddings = Self::n_paddings(self.subviews.len(), self.padding_type) as f32;
 
-        let min_alpha = self.alpha_sum + n_paddings * self.fixed_padding.unwrap_or(0.);
+        let min_alpha = self.alpha_sum_finite + n_paddings * self.fixed_padding.unwrap_or(0.);
         let leftover_alpha = (bounds.alpha(self.axis) - min_alpha).max(0.);
         let shrink_a = (bounds.alpha(self.axis) / min_alpha).min(1.);
         let shrink_b = match self.shrink_together {
             true => (bounds.beta(self.axis) / self.beta_max_finite).min(1.),
             false => 1.0f32,
         };
+        // Leading padding, excluding the padding caused by `Omnipadded`.
         let padding_leading = match (self.fixed_padding, self.alignment_alpha) {
-            // Alignment_alpha is only effective if with fixed padding.
-            (None, _) => 0.0f32,
+            // If one of the views spread:
+            (_, _) if self.n_infinite_alphas != 0 => 0.,
+            // `alignment_alpha` is ineffective unless set with fixed padding.
+            (None, _alignment) => 0.0f32,
             (Some(_), alignment) => alignment.ratio() * leftover_alpha,
         };
-        let padding_body = match self.fixed_padding {
+        let padding = match self.fixed_padding {
             Some(fixed_padding) => fixed_padding * shrink_a,
+            // If one of the views spread:
+            None if self.n_infinite_alphas != 0 => 0.,
             None => leftover_alpha / n_paddings,
+        };
+        let spread_view_alpha = match self.n_infinite_alphas {
+            0 => 0.0f32,
+            n => leftover_alpha / (n as f32)
         };
 
         // Accumulator for A-axis offset while we iterate through the subviews.
@@ -206,11 +221,16 @@ impl<'pass, 'views, 'cx, UiState> View<'cx, UiState> for Stack<'pass, 'views, 'c
             if i != 0 || self.padding_type == StackPaddingType::Omnipadded {
                 // This accumulation cannot be moved to end of iteration to eliminate the if
                 // condition, because `remaining_size` uses offset_a later.
-                offset_a += padding_body;
+                offset_a += padding;
             }
-            let requested_size = subview
+            let mut requested_size = subview
                 .preferred_size
                 .scaled_on_axis(self.axis, shrink_a, shrink_b);
+            let requested_alpha = requested_size.alpha_mut(self.axis);
+            if *requested_alpha == f32::INFINITY {
+                // This view wants to spread.
+                *requested_alpha = spread_view_alpha;
+            }
             let remaining_size = RectSize::new_on_axis(
                 self.axis,
                 bounds.alpha(self.axis) - offset_a,

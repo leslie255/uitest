@@ -39,18 +39,21 @@ impl<'cx> App<'cx> {
         // let texture = ui_context.create_texture(image);
 
         let colors = [0x0000C0, 0x00C000, 0xC00000, 0x008080, 0x808000, 0x800080];
+
+        let rects = colors
+            .into_iter()
+            .map(|color| {
+                muilib::RectView::new(RectSize::new(100., 100.))
+                    .with_fill_color(Srgb::from_hex(color))
+                    .with_line_color(Srgb::from_hex(0xFFFFFF))
+                    .with_line_width(2.)
+            })
+            .collect();
+
         let mut self_ = Self {
             window,
             window_canvas,
-            rects: colors
-                .into_iter()
-                .map(|color| {
-                    muilib::RectView::new(RectSize::new(100., 100.))
-                        .with_fill_color(Srgb::from_hex(color))
-                        .with_line_color(Srgb::from_hex(0xFFFFFF))
-                        .with_line_width(2.)
-                })
-                .collect(),
+            rects,
             ui_context,
         };
         self_.window_resized();
@@ -59,39 +62,46 @@ impl<'cx> App<'cx> {
 
     fn frame(&mut self, canvas: muilib::CanvasRef) {
         let layout = self.ui_context.begin_layout_pass();
-
-        let [row0, row1, row2] = self.rects.get_disjoint_mut([0..1, 1..3, 3..6]).unwrap();
+        let [row0, row1, row2] = self.rects.get_disjoint_mut([0..3, 3..4, 4..6]).unwrap();
         let root_view = layout.vstack(|vstack| {
-            vstack.set_fixed_padding(10.);
-            vstack.set_alignment_vertical(muilib::StackAlignmentVertical::Bottom);
-            vstack.set_alignment_horizontal(muilib::StackAlignmentHorizontal::Right);
+            vstack.set_fixed_padding(4.);
+            vstack.set_alignment_vertical(muilib::StackAlignmentVertical::Top);
+            vstack.set_alignment_horizontal(muilib::StackAlignmentHorizontal::Left);
             vstack.subview(layout.hstack(|hstack| {
-                hstack.set_fixed_padding(10.);
+                hstack.set_fixed_padding(4.);
+                for rect in &mut *row0 {
+                    rect.set_size(RectSize::new(64., 24.));
+                }
+                if let Some(rect) = row0.last_mut() {
+                    rect.size_mut().width = f32::INFINITY;
+                }
                 for rect in row0 {
                     hstack.subview(rect);
                 }
             }));
             vstack.subview(layout.hstack(|hstack| {
-                hstack.set_fixed_padding(10.);
+                hstack.set_fixed_padding(4.);
                 for rect in row1 {
+                    rect.set_size(RectSize::new(f32::INFINITY, f32::INFINITY));
                     hstack.subview(rect);
                 }
             }));
             vstack.subview(layout.hstack(|hstack| {
-                hstack.set_fixed_padding(10.);
+                hstack.set_fixed_padding(4.);
+                for rect in &mut *row2 {
+                    rect.set_size(RectSize::new(64., 24.));
+                }
+                if let Some(rect) = row2.first_mut() {
+                    rect.size_mut().width = f32::INFINITY;
+                }
                 for rect in row2 {
                     hstack.subview(rect);
                 }
             }));
         });
 
-        let root_view_packaged = layout
-            .container(root_view)
-            .override_subview_size(RectSize::new(f32::INFINITY, f32::INFINITY))
-            .set_padding(muilib::ContainerPadding::Fixed(20.));
-
         self.ui_context
-            .prepare_view_bounded(&canvas, canvas.bounds(), root_view_packaged);
+            .prepare_view_bounded(&canvas, canvas.bounds().with_inset(16.), root_view);
 
         let mut render_pass = self
             .ui_context
