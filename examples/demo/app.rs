@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use muilib::{Canvas as _, RectSize, Srgb};
 use winit::{
     application::ApplicationHandler,
     event::WindowEvent,
@@ -8,22 +9,17 @@ use winit::{
     window::{Window, WindowAttributes, WindowId},
 };
 
-use muilib::{
-    AppResources, Canvas as _, CanvasRef, EventRouter, LazyApplicationHandler, RectSize, RectView,
-    Srgb, UiContext, WindowCanvas,
-};
-
 use crate::theme::Theme;
 
 pub struct App<'cx> {
     window: Arc<Window>,
-    window_canvas: WindowCanvas<'static>,
-    ui_context: UiContext<'cx, Self>,
-    rects: Vec<RectView>,
+    window_canvas: muilib::WindowCanvas<'static>,
+    ui_context: muilib::UiContext<'cx, Self>,
+    rects: Vec<muilib::RectView>,
 }
 
-impl<'cx> LazyApplicationHandler<&'cx AppResources> for App<'cx> {
-    fn new(resources: &'cx AppResources, event_loop: &ActiveEventLoop) -> Self {
+impl<'cx> muilib::LazyApplicationHandler<&'cx muilib::AppResources> for App<'cx> {
+    fn new(resources: &'cx muilib::AppResources, event_loop: &ActiveEventLoop) -> Self {
         let window = event_loop
             .create_window(WindowAttributes::default().with_title("UI Test"))
             .unwrap();
@@ -32,11 +28,11 @@ impl<'cx> LazyApplicationHandler<&'cx AppResources> for App<'cx> {
 }
 
 impl<'cx> App<'cx> {
-    pub fn create(resources: &'cx AppResources, window: Window) -> Self {
+    pub fn create(resources: &'cx muilib::AppResources, window: Window) -> Self {
         let window = Arc::new(window);
-        let event_router = Arc::new(EventRouter::new());
+        let event_router = Arc::new(muilib::EventRouter::new());
         let (ui_context, window_canvas) =
-            UiContext::create_for_window(resources, window.clone(), event_router.clone())
+            muilib::UiContext::create_for_window(resources, window.clone(), event_router.clone())
                 .unwrap_or_else(|e| panic!("{e}"));
 
         // let image = resources.load_image("images/pfp.png").unwrap();
@@ -49,7 +45,7 @@ impl<'cx> App<'cx> {
             rects: colors
                 .into_iter()
                 .map(|color| {
-                    RectView::new(RectSize::new(100., 100.))
+                    muilib::RectView::new(RectSize::new(100., 100.))
                         .with_fill_color(Srgb::from_hex(color))
                         .with_line_color(Srgb::from_hex(0xFFFFFF))
                         .with_line_width(2.)
@@ -61,35 +57,41 @@ impl<'cx> App<'cx> {
         self_
     }
 
-    fn frame(&mut self, canvas: CanvasRef) {
+    fn frame(&mut self, canvas: muilib::CanvasRef) {
         let layout = self.ui_context.begin_layout_pass();
 
         let [row0, row1, row2] = self.rects.get_disjoint_mut([0..1, 1..3, 3..6]).unwrap();
         let root_view = layout.vstack(|vstack| {
             vstack.set_fixed_padding(10.);
+            vstack.set_alignment_vertical(muilib::StackAlignmentVertical::Bottom);
             vstack.set_alignment_horizontal(muilib::StackAlignmentHorizontal::Right);
-            vstack.subview(layout.hstack(|vstack| {
-                vstack.set_fixed_padding(10.);
+            vstack.subview(layout.hstack(|hstack| {
+                hstack.set_fixed_padding(10.);
                 for rect in row0 {
-                    vstack.subview(rect);
+                    hstack.subview(rect);
                 }
             }));
-            vstack.subview(layout.hstack(|vstack| {
-                vstack.set_fixed_padding(10.);
+            vstack.subview(layout.hstack(|hstack| {
+                hstack.set_fixed_padding(10.);
                 for rect in row1 {
-                    vstack.subview(rect);
+                    hstack.subview(rect);
                 }
             }));
-            vstack.subview(layout.hstack(|vstack| {
-                vstack.set_fixed_padding(10.);
+            vstack.subview(layout.hstack(|hstack| {
+                hstack.set_fixed_padding(10.);
                 for rect in row2 {
-                    vstack.subview(rect);
+                    hstack.subview(rect);
                 }
             }));
         });
 
+        let root_view_packaged = layout
+            .container(root_view)
+            .override_subview_size(RectSize::new(f32::INFINITY, f32::INFINITY))
+            .set_padding(muilib::ContainerPadding::Fixed(20.));
+
         self.ui_context
-            .prepare_view_bounded(&canvas, canvas.bounds().with_inset(20.), root_view);
+            .prepare_view_bounded(&canvas, canvas.bounds(), root_view_packaged);
 
         let mut render_pass = self
             .ui_context

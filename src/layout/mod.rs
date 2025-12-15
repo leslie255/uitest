@@ -1,9 +1,8 @@
 use std::marker::PhantomData;
 
 use bumpalo::Bump;
-use derive_more::{AsMut, AsRef, Deref, DerefMut};
 
-use crate::{Axis, RectSize, View};
+use crate::{Axis, View};
 
 mod container;
 mod stack;
@@ -63,14 +62,4 @@ impl<'cx, UiState: 'cx> LayoutPass<'cx, UiState> {
     ) -> &'pass mut Stack<'pass, 'views, 'cx, UiState> {
         self.stack(Axis::Horizontal, build)
     }
-}
-
-#[derive(AsRef, AsMut, Deref, DerefMut)]
-pub(crate) struct Subview<'a, 'cx, UiState> {
-    pub(crate) preferred_size: RectSize<f32>,
-    #[deref]
-    #[deref_mut]
-    #[as_ref]
-    #[as_mut]
-    pub(crate) view: &'a mut (dyn View<'cx, UiState> + 'a),
 }

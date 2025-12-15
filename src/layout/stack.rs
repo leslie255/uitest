@@ -1,9 +1,10 @@
 use crate::{
-    Axis, Bounds, CanvasRef, RectSize, RenderPass, Subview, UiContext, View, axis_utils::*,
+    Axis, Bounds, CanvasRef, RectSize, RenderPass, UiContext, View, axis_utils::*,
 };
 
 use bumpalo::{Bump, collections::Vec as BumpVec};
 use cgmath::*;
+use derive_more::{AsMut, AsRef, Deref, DerefMut};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StackPaddingType {
@@ -94,6 +95,16 @@ impl From<StackAlignment> for StackAlignmentVertical {
             StackAlignment::Ratio(r) => Self::Ratio(r),
         }
     }
+}
+
+#[derive(AsRef, AsMut, Deref, DerefMut)]
+pub(crate) struct Subview<'a, 'cx, UiState> {
+    pub(crate) preferred_size: RectSize<f32>,
+    #[deref]
+    #[deref_mut]
+    #[as_ref]
+    #[as_mut]
+    pub(crate) view: &'a mut (dyn View<'cx, UiState> + 'a),
 }
 
 pub struct Stack<'pass, 'views, 'cx, UiState> {
