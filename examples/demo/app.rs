@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use muilib::{Canvas as _, RectSize, Srgb};
+use muilib::{Canvas as _, RectSize};
 use winit::{
     application::ApplicationHandler,
     event::WindowEvent,
@@ -15,6 +15,7 @@ pub struct App<'cx> {
     window: Arc<Window>,
     window_canvas: muilib::WindowCanvas<'static>,
     ui_context: muilib::UiContext<'cx>,
+    button: muilib::ButtonView<'cx, Self>,
     rects: Vec<muilib::RectView>,
     event_router: Arc<muilib::EventRouter<'cx, Self>>,
 }
@@ -39,22 +40,24 @@ impl<'cx> App<'cx> {
         // let image = resources.load_image("images/pfp.png").unwrap();
         // let texture = ui_context.create_texture(image);
 
-        let colors = [0x0000C0, 0x00C000, 0xC00000, 0x008080, 0x808000, 0x800080];
+        let theme = Theme::DEFAULT;
 
-        let rects = colors
-            .into_iter()
-            .map(|_| {
-                muilib::RectView::new(RectSize::new(100., 100.))
-                    .with_fill_color(Theme::DEFAULT.secondary_background())
-                    .with_line_color(Srgb::from_hex(0xFFFFFF))
-                    .with_line_width(2.)
-            })
-            .collect();
+        let colors = [0x0000C0, 0x00C000, 0xC00000, 0x008080, 0x808000, 0x800080];
 
         let mut self_ = Self {
             window,
             window_canvas,
-            rects,
+            button: muilib::ButtonView::new(&ui_context)
+                .with_callback(&event_router, |_, event| log::debug!("button event: {event:?}")),
+            rects: colors
+                .into_iter()
+                .map(|_| {
+                    muilib::RectView::new(RectSize::new(100., 100.))
+                        .with_fill_color(theme.secondary_background())
+                        .with_line_color(theme.tertiary_foreground())
+                        .with_line_width(2.)
+                })
+                .collect(),
             ui_context,
             event_router,
         };
@@ -74,6 +77,7 @@ impl<'cx> App<'cx> {
                 for rect in &mut *row0 {
                     rect.set_size(RectSize::new(64., 24.));
                 }
+                hstack.subview(&mut self.button);
                 if let Some(rect) = row0.last_mut() {
                     rect.size_mut().width = f32::INFINITY;
                 }
