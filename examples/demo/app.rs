@@ -47,8 +47,8 @@ impl<'cx> App<'cx> {
         let mut self_ = Self {
             window,
             window_canvas,
-            button: muilib::ButtonView::new(&ui_context)
-                .with_callback(&event_router, |_, event| log::debug!("button event: {event:?}")),
+            button: muilib::ButtonView::new(&ui_context, &event_router)
+                .with_callback(|_, event| log::debug!("button event: {event:?}")),
             rects: colors
                 .into_iter()
                 .map(|_| {

@@ -2,7 +2,7 @@ use std::{
     borrow::Cow,
     fmt::Debug,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{
             AtomicBool,
             Ordering::{AcqRel, Acquire, Release},
@@ -134,52 +134,41 @@ pub struct ButtonView<'cx, UiState> {
     text_view: TextView<'cx>,
     style: ButtonStyle,
     dispatch: Arc<ButtonDispatch<UiState>>,
-    /// `None` until the first `prepare_for_drawing`.
-    listener_handle: Option<ListenerHandle>,
+    listener_handle: ListenerHandle,
 }
 
 impl<'cx, UiState> ButtonView<'cx, UiState> {
-    pub fn new(ui_context: &UiContext<'cx>) -> Self {
+    pub fn new(ui_context: &UiContext<'cx>, event_router: &EventRouter<'cx, UiState>) -> Self
+    where
+        UiState: 'cx,
+    {
         let dispatch = Arc::new(ButtonDispatch {
             state: AtomicButtonState::new(ButtonState::Idle),
             state_updated: AtomicBool::new(true),
-            callback: None,
+            callback: Mutex::new(None),
         });
+        let listener_handle = event_router.register_listener(Bounds::default(), dispatch.clone());
         Self {
             rect_view: RectView::new(Self::DEFAULT_SIZE),
             text_view: TextView::new(ui_context).with_text("Button"),
             style: Self::DEFAULT_STYLE,
             dispatch,
-            listener_handle: None,
+            listener_handle,
         }
     }
 
-    pub fn set_callback(
-        &mut self,
-        event_router: &EventRouter<'cx, UiState>,
-        callback: ButtonCallback<UiState>,
-    ) where
-        UiState: 'cx,
-    {
-        self.dispatch = Arc::new(ButtonDispatch {
-            state: AtomicButtonState::new(self.dispatch.state()),
-            state_updated: AtomicBool::new(self.dispatch.state_updated.load(Acquire)),
-            callback: Some(callback),
-        });
-        let listener_handle =
-            event_router.register_listener(self.rect_view.bounds(), self.dispatch.clone());
-        self.listener_handle = Some(listener_handle);
-    }
-
-    pub fn with_callback(
-        mut self,
-        event_router: &EventRouter<'cx, UiState>,
-        callback: ButtonCallback<UiState>,
-    ) -> Self
+    pub fn set_callback(&mut self, callback: ButtonCallback<UiState>)
     where
         UiState: 'cx,
     {
-        self.set_callback(event_router, callback);
+        *self.dispatch.callback.lock().unwrap() = Some(callback);
+    }
+
+    pub fn with_callback(mut self, callback: ButtonCallback<UiState>) -> Self
+    where
+        UiState: 'cx,
+    {
+        self.set_callback(callback);
         self
     }
 
@@ -289,9 +278,7 @@ impl<'cx, UiState: 'cx> View<'cx> for ButtonView<'cx, UiState> {
     fn apply_bounds(&mut self, bounds: Bounds<f32>) {
         self.rect_view.apply_bounds_(bounds);
         self.relayout_text();
-        if let Some(listener_handle) = self.listener_handle.as_ref() {
-            listener_handle.update_bounds(self.rect_view.bounds());
-        }
+        self.listener_handle.update_bounds(self.rect_view.bounds());
     }
 
     fn prepare_for_drawing(&mut self, ui_context: &UiContext<'cx>, canvas: &CanvasRef) {
@@ -313,7 +300,7 @@ struct ButtonDispatch<UiState> {
     state: AtomicButtonState,
     /// Flag for when GPU-side things needs updating after something has changed.
     state_updated: AtomicBool,
-    callback: Option<ButtonCallback<UiState>>,
+    callback: Mutex<Option<ButtonCallback<UiState>>>,
 }
 
 impl<UiState> ButtonDispatch<UiState> {
@@ -352,7 +339,7 @@ impl<UiState> MouseEventListener<UiState> for Arc<ButtonDispatch<UiState>> {
         };
         self.set_state(new_state);
         self.state_updated.store(true, Release);
-        if let Some(callback) = self.callback.as_ref() {
+        if let Some(callback) = self.callback.lock().unwrap().as_ref() {
             let button_event = ButtonEvent {
                 kind: event.kind,
                 position: event.cursor_position,
